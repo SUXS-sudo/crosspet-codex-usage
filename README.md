@@ -4,7 +4,7 @@
 
 基于 [lokicorvus/crosspet](https://github.com/lokicorvus/crosspet) 的 Windows 定制版，合入任务 Token 统计窗口。角色选择与正在使用的 AI 分离，保留原有动作和互动。
 
-![CrossPet 角色展示](docs/images/cover.webp)
+![桌宠下方显示 GPT 额度与今日 Token（演示数据）](docs/images/pet-usage.png)
 
 ## 功能
 
@@ -13,6 +13,18 @@
 - 点击底部额度/Token，或右键选择“任务 Token 统计”，查看搜索、日期筛选、每日趋势、子代理和 CSV 导出。
 - 统计窗口随当前宠物切换金色、蓝色、紫色、靛蓝或灰蓝主题，保留筛选与数据。
 - 设置精简为外观、角色、通用；支持登录 Windows 后自动启动。
+
+## 界面截图
+
+以下均为实际程序界面使用虚构数据渲染的截图，所有任务名已遮挡，不包含真实聊天记录、个人目录或任务 ID。
+
+Gemini 紫色主题：
+
+![Gemini 紫色任务统计页，任务名已遮挡，数值为演示数据](docs/images/usage-gemini.png)
+
+DeepSeek 蓝色主题：
+
+![DeepSeek 蓝色任务统计页，任务名已遮挡，数值为演示数据](docs/images/usage-deepseek.png)
 
 ## 构建和运行
 
