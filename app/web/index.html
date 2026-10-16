@@ -1,0 +1,1513 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+@property --aura { syntax: '<color>'; inherits: true; initial-value: #ffd9b0; }
+/* --k：文字区域（气泡、名牌、额度）相对人物再放大多少，外壳调 setSizes 设；锁着时 1 */
+:root { --aura: #ffd9b0; --aura-o: .35; --k: 1; }
+html, body { margin: 0; background: transparent; overflow: hidden; -webkit-user-select: none; cursor: default;
+  font-family: -apple-system, "PingFang SC", sans-serif; }
+/* 从下往上排：底栏（名牌 + 额度）固定高度贴着窗口底边，人物在它上面，气泡从人物头顶往上长。
+   这样名牌开关、额度有几行、台词有多长，人物都不挪位置，额度也不会被长台词挤出窗口
+   （Windows 上微软雅黑行高大，之前开着名牌、台词折两三行时额度会被挤出去） */
+#wrap { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100vh; }
+#wrap > * { flex-shrink: 0; }
+/* 底栏最小高度按 max(1, k)：字比人小时不缩，人物不往下掉 */
+#foot { min-height: calc(62px * max(1, var(--k))); flex-shrink: 0; display: flex; flex-direction: column; align-items: center; }
+#bubble { position: relative; z-index: 3; margin-bottom: calc(-10px * var(--k)); max-width: calc(228px * var(--k)); min-height: calc(18px * var(--k));
+  margin-top: calc(4px * var(--k)); padding: calc(5px * var(--k)) calc(11px * var(--k)); border-radius: calc(12px * var(--k));
+  background: rgba(255,255,255,.95); border: calc(1.5px * var(--k)) solid var(--accent, #e0b48a); color: #4a2418;
+  font-size: calc(13px * var(--k)); line-height: 1.35; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,.12);
+  transition: opacity .3s, transform .3s; }
+#bubble.hide { opacity: 0; transform: translateY(4px); }
+/* 更新后的「新功能」卡片：放在气泡的位置（她头顶，挂在 #stage 上沿、和气泡一样往下压 10），不占排版、不改窗口大小 */
+#newsCard { position: absolute; z-index: 4; left: 50%; bottom: calc(100% - 10px * var(--k)); transform: translateX(-50%); width: max-content; max-width: calc(228px * var(--k));
+  padding: calc(4px * var(--k)) calc(11px * var(--k)) calc(2px * var(--k)); border-radius: calc(12px * var(--k)); background: rgba(255,255,255,.97);
+  border: calc(1.5px * var(--k)) solid var(--accent, #e0b48a); color: #4a2418; font-size: calc(13px * var(--k)); line-height: 1.3; text-align: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,.12); transition: opacity .3s; white-space: nowrap; }
+#newsCard.hidden { opacity: 0; visibility: hidden; }
+#newsCard .btns { display: flex; justify-content: center; gap: calc(10px * var(--k)); }
+#newsCard button { font: inherit; font-size: calc(12px * var(--k)); border: none; background: none; color: #998; padding: 0 calc(6px * var(--k)); min-height: calc(22px * var(--k)); cursor: pointer; }
+#newsCard button.go { color: #c8792f; font-weight: 600; }
+#stage { position: relative; width: 250px; height: 241px; transition: transform .32s ease, opacity .32s ease; }
+#stage.swap { transform: scale(.9) translateY(4%); opacity: 0; }
+#aura { position: absolute; left: 50%; top: 50%; width: 240px; height: 240px; margin: -120px 0 0 -120px;
+  border-radius: 50%; opacity: var(--aura-o);
+  background: radial-gradient(circle closest-side, var(--aura) 0%, color-mix(in srgb, var(--aura) 45%, transparent) 45%, transparent 100%);
+  transition: --aura 0.8s, opacity .8s; animation: pulse 3s ease-in-out infinite; }
+@keyframes pulse { 50% { transform: scale(1.04); } }
+/* 背景光晕：浅色背景上是柔和的氛围，深色背景上会变成一圈发亮的圆盘（像佛光）。
+   html 上的 aura-on / aura-off 由宿主按右键菜单的选择设；都没有（自动）时跟着系统深浅色，深色模式下不显示 */
+html.aura-off #aura, html.aura-off .aura-rings { display: none; }
+@media (prefers-color-scheme: dark) { html:not(.aura-on) #aura, html:not(.aura-on) .aura-rings { display: none; } }
+#shadow { position: absolute; left: 50%; bottom: 7px; width: 110px; height: 10px; margin-left: -55px;
+  border-radius: 50%; background: rgba(0,0,0,.13); }
+#body { position: absolute; left: 17.8%; top: 21.1%; width: 64.5%; height: 75%; transform-origin: 50% 100%; }
+/* 立绘按高度占满人物框；比框宽的（张开翅膀、带小帮手、抱大碗……）往左右多伸出去，最多到整个舞台宽，
+   而不是整体缩小——这样所有姿态里人物一样高 */
+#body img { position: absolute; top: 0; bottom: 0; left: -27.5%; width: 155%; height: 100%; object-fit: contain; object-position: 50% 100%;
+  opacity: 0; transition: opacity .35s ease; }
+#body img.on { opacity: 1; }
+#body img#blink { transition: none; }
+#fx { position: absolute; inset: 0; transition: opacity .3s; pointer-events: none; }
+/* 闲着久了：身边的特效淡出（见「特效省电」） */
+#fx.rest { opacity: 0; transition: opacity 1.2s; }
+/* 看不见（被挡住、锁屏）：所有动画暂停 */
+html.frozen *, html.frozen *::before, html.frozen *::after { animation-play-state: paused !important; }
+/* 多会话：每个正在干活的对话一张小卡片，放在桌宠两侧 / 四个角 */
+#cards { position: absolute; inset: 0; pointer-events: none; }
+.scard { position: absolute; width: 66px; height: 56px; transition: left .35s ease, top .35s ease, opacity .35s ease, transform .35s ease; opacity: 0; transform: scale(.6); }
+.scard.on { opacity: .72; transform: scale(.92); }
+.scard.on.focus { opacity: 1; transform: scale(1.06); }
+.scard svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 1px 2px rgba(0,0,0,.18)); }
+.scard .badge { position: absolute; right: -4px; bottom: -2px; width: 20px; height: 20px; border-radius: 50%; color: #fff; font: bold 13px/20px sans-serif; text-align: center; opacity: 0; transform: scale(.4); transition: opacity .25s, transform .25s; }
+.scard.done .badge { background: #3dbb6a; opacity: 1; transform: none; }
+.scard.error svg { filter: drop-shadow(0 0 3px #ff5a5a); }
+.scard.error { animation: cardShake .45s ease 2; }
+.scard.ask { animation: cardBounce .9s ease-in-out infinite; }
+@keyframes cardShake { 25% { translate: -4px 0; } 75% { translate: 4px 0; } }
+@keyframes cardBounce { 50% { translate: 0 -5px; } }
+#more { position: absolute; right: 2px; bottom: 6px; padding: 1px 7px; border-radius: 9px; background: rgba(255,255,255,.9); color: #4a2418;
+  font: bold 11px/16px sans-serif; box-shadow: 0 1px 3px rgba(0,0,0,.15); opacity: 0; transition: opacity .3s; }
+#more.on { opacity: 1; }
+/* 贴边：缩在屏幕边上时只露半个身子（扒着边缘的立绘，没画时用平常的），额度、名牌、气泡、特效都藏起来 */
+html.tucked #bubble, html.tucked #fx, html.tucked #cards, html.tucked #aura, html.tucked #shadow { visibility: hidden; }
+/* 名牌、额度在最底下：直接拿出版面（只隐藏的话，透明窗口偶尔少擦它们底边那一行，缩进去那一下闪一条横线） */
+html.tucked #caption, html.tucked #quota { display: none; }
+/* 有贴边立绘时：立绘贴着窗口那条边放，切口就是窗口的边、也就是屏幕边缘。贴边 / 探出来两张换图时窗口不用动，原地淡入淡出 */
+html.tucked-art.tucked-left #wrap { align-items: flex-start; }
+html.tucked-art.tucked-right #wrap { align-items: flex-end; }
+html.tucked-art #body { left: 0; width: 100%; }
+html.tucked-art #body img { left: 0; width: 100%; }
+html.tucked-art.tucked-left #body img { object-position: 0% 100%; }
+html.tucked-art.tucked-right #body img { object-position: 100% 100%; }
+html.tucked-art #body { animation: none !important; transform: none !important; }
+#fx.hide { opacity: 0; }
+#fx svg { width: 100%; height: 100%; overflow: visible; }
+#poof { position: absolute; left: 50%; top: 55%; width: 0; height: 0; pointer-events: none; }
+#poof i { position: absolute; width: 46px; height: 46px; margin: -23px; border-radius: 50%; background: #fff;
+  box-shadow: 0 0 0 2px rgba(74,36,24,.25); opacity: 0; }
+#poof.go i { animation: puff .6s ease-out forwards; }
+@keyframes puff { 0% { opacity: .95; transform: translate(0,0) scale(.3); } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(1.3); } }
+.m-dash  { animation: dash 2.2s ease-in-out forwards; }
+.m-leave { animation: leave 1s ease-in forwards; }
+@keyframes leave { 0% { transform: none; } 100% { transform: translateX(28%) rotate(4deg); opacity: 0; } }
+@keyframes dash { 0%, 55% { transform: none; } 100% { transform: translateX(28%) rotate(4deg); opacity: 0; } }
+#caption { margin-top: calc(-2px * var(--k)); padding: calc(2px * var(--k)) calc(9px * var(--k)); border-radius: calc(8px * var(--k)); background: rgba(255,255,255,.85);
+  color: #6b4a3a; font-size: calc(11px * var(--k)); min-height: calc(14px * var(--k)); }
+#caption:empty { visibility: hidden; }
+html.no-name #caption { display: none; }
+#quota { max-width: calc(236px * var(--k)); text-align: center; line-height: 1.35; margin-top: calc(2px * var(--k)); padding: calc(1px * var(--k)) calc(8px * var(--k));
+  border-radius: calc(7px * var(--k)); background: rgba(255,255,255,.8); color: #6b4a3a; font-size: calc(10px * var(--k)); }
+#quota:empty { display: none; }
+#taskTokens { display: none; }
+html.usage-footer #foot { min-height: calc(96px * max(1, var(--k))); }
+html.usage-footer #quota { max-width: calc(300px * var(--k)); font-size: calc(13.5px * var(--k)); font-weight: 500; color: color-mix(in srgb, var(--accent) 68%, black); cursor: pointer; }
+html.usage-footer #quota.tight { font-size: calc(12px * var(--k)); }
+html.usage-footer #quota.low { color: #c0392b; }
+html.usage-footer #taskTokens { display: block; padding: calc(3px * var(--k)) calc(9px * var(--k)); margin-top: calc(2px * var(--k)); font-size: calc(13px * var(--k)); color: color-mix(in srgb, var(--accent) 68%, black); background: rgba(255,255,255,.85); border-radius: calc(8px * var(--k)); cursor: pointer; }
+html.tucked #taskTokens { display: none; }
+#quota div { white-space: nowrap; }
+#quota.low { color: #c0392b; background: rgba(255,236,236,.92); }
+#quota .notice { color: #6b4a3a; font-weight: 600; }   /* 重置提醒那一行：不跟着额度紧张变红 */
+/* 额度合并显示：一家 AI 一行，名字一列、每个额度窗口一列（quota-aggregate.js），只有紧张的百分比变红 */
+#quota.agg:not(:empty) { display: grid; justify-content: center; text-align: left; font-variant-numeric: tabular-nums; }
+#quota .qn { white-space: nowrap; padding-right: calc(7px * var(--k)); font-weight: 600; }
+#quota .qc { white-space: nowrap; padding: 0 calc(6px * var(--k)); }
+#quota .qn + .qc { padding-left: 0; }
+#quota .qc + .qc { border-left: 1px solid rgba(107,74,58,.25); }
+#quota .qc .low { color: #c0392b; font-weight: 700; }
+/* 四家都有时 4 行要塞进底栏（#foot 的 62px 预算里额度小窗最多约 43px），人物才不会被顶上去；字放大时预算也按 k 放大 */
+#quota.tight { font-size: calc(9px * var(--k)); line-height: 1.1; }
+#quota.tight .qc { padding: 0 calc(4px * var(--k)); }
+#quota.tight .qn { padding-right: calc(5px * var(--k)); }
+
+/* 身体动作：切换时用 animation 平滑接上 */
+.m-bob   { animation: bob 3.2s ease-in-out infinite; }
+.m-hop   { animation: bob-big .8s ease-in-out infinite; }
+.m-jump  { animation: jump .7s ease-in-out infinite; }
+.m-quick { animation: bob-small .45s ease-in-out infinite; }
+.m-rock  { animation: rock 3s ease-in-out infinite; }
+.m-sway  { animation: rock 1.8s ease-in-out infinite; }
+.m-slow  { animation: bob-tiny 4.5s ease-in-out infinite; }
+.m-float { animation: float 4.2s ease-in-out infinite; }
+.m-shake { animation: shake 1.4s ease-in-out infinite; }
+/* 红温：浑身发抖、泛红光；被甩晕：东倒西歪 */
+.m-angry { animation: angry .14s linear infinite; }
+.m-angry img { filter: drop-shadow(0 0 7px rgba(255, 60, 30, .75)) saturate(1.15); }
+.m-dizzy { animation: dizzy 1.1s ease-in-out infinite; }
+/* 多会话时被甩：小卡片东倒西歪 */
+#cards.shaken .scard { animation: card-wobble .22s ease-in-out 4 alternate; }
+#cards.shaken .scard:nth-child(even) { animation-direction: alternate-reverse; }
+@keyframes card-wobble { from { transform: scale(.92) translate(-5px, 2px) rotate(-16deg); } to { transform: scale(.92) translate(5px, -3px) rotate(16deg); } }
+@keyframes angry { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-1.2%, .4%); } 50% { transform: translate(1.2%, -.4%); } 75% { transform: translate(-.8%, -.3%); } }
+@keyframes dizzy { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
+.m-squish{ animation: squish 1.6s ease-in-out infinite; }
+.m-gift  { animation: gift .65s cubic-bezier(.3,1.6,.5,1) 1, bob-big 1.1s ease-in-out .65s infinite; }
+.m-jolt  { animation: jolt .55s cubic-bezier(.3,1.6,.5,1) 1, bob 3.2s ease-in-out .55s infinite; }
+@keyframes bob { 50% { transform: translateY(-2.5%); } }
+@keyframes bob-big { 50% { transform: translateY(-5%); } }
+@keyframes bob-small { 50% { transform: translateY(-1.8%); } }
+@keyframes float { 0%,100% { transform: translateY(-4%) rotate(-1.5deg); } 50% { transform: translateY(-10%) rotate(1.5deg); } }
+@keyframes bob-tiny { 50% { transform: translateY(-.8%) scale(1.01, 1.015); } }
+@keyframes jump { 0%,100% { transform: translateY(0) scale(1.02,.98); } 50% { transform: translateY(-9%) scale(.98,1.02); } }
+@keyframes rock { 0%,100% { transform: rotate(-2.5deg); } 50% { transform: rotate(2.5deg); } }
+@keyframes shake { 0%,50%,100% { transform: translateX(0); } 10% { transform: translateX(-3%); } 20% { transform: translateX(3%); }
+  30% { transform: translateX(-2%); } 40% { transform: translateX(2%); } }
+@keyframes squish { 50% { transform: scale(.96, 1.05); } }
+@keyframes gift { 0% { transform: translateY(3%) scale(1.05,.93); } 45% { transform: translateY(-9%) scale(.97,1.04); } 100% { transform: none; } }
+@keyframes jolt { 0% { transform: translate(0,0) rotate(0); } 25% { transform: translate(-3%, -4%) rotate(-4deg) scale(.97,1.04); } 60% { transform: translate(1%, 0) rotate(1.5deg); } 100% { transform: none; } }
+/* 从别的窗口后面浮到最上层（显示层级「跟着 AI」）：先藏起来，换完层级再淡入、轻轻上浮，不要一下子盖上来 */
+#wrap.sunk { opacity: 0; }
+#wrap.surface { animation: surface .45s cubic-bezier(.2,.8,.2,1); }
+@keyframes surface { from { opacity: 0; transform: translateY(5%) scale(.97); } to { opacity: 1; transform: none; } }
+</style></head>
+<body>
+<div id="wrap">
+  <div id="bubble" class="hide"></div>
+  <div id="stage">
+    <div id="aura"></div><div id="shadow"></div>
+    <div id="body"><img id="a" class="on"><img id="b"><img id="blink"></div>
+    <div id="fx"></div>
+    <div id="cards"><div id="more"></div></div>
+    <div id="newsCard" class="hidden"><div id="newsText"></div><div class="btns"><button class="go" data-action="news-open">去看看 ›</button><button data-action="news-close">知道了</button></div></div>
+    <div id="poof"><i style="--dx:-60px;--dy:-30px"></i><i style="--dx:55px;--dy:-35px"></i><i style="--dx:-45px;--dy:40px"></i><i style="--dx:50px;--dy:35px"></i><i style="--dx:0;--dy:-60px"></i></div>
+  </div>
+  <div id="foot"><div id="caption"></div><div id="quota"></div><div id="taskTokens"></div></div>
+</div>
+<script>
+// 立绘加载失败：告诉 Windows 外壳记进日志（反馈里能看出是哪张图）。macOS 上没有这个通道，不做任何事
+addEventListener('error', e => { if (e.target && e.target.tagName === 'IMG' && e.target.src) window.chrome?.webview?.postMessage({ imageError: e.target.src }) }, true)
+</script>
+<script src="effects.js"></script>
+<script src="text-size.js"></script>
+<script src="codex-quota.js"></script>
+<script src="quota-aggregate.js"></script>
+<script src="plugin-update.js"></script>
+<script src="stand-in.js"></script>
+<script src="codex-resets.js"></script>
+<script src="whats-new.js"></script>
+<script>
+// CrossPet 画面：由 CrossPet.app（Swift 外壳）调用这几个函数
+//   init(manifest)          角色清单（characters/*/character.json + 立绘）
+//   setCharacter(id)        切换角色（按前台应用自动切，或右键菜单）
+//   applyCharState(id, s)   某个 AI 的工作状态（各接入写的 <id>-state.json）
+//   setQuota(id, q)         某个 AI 的额度 / 余额（<id>-quota.json；GPT 走 setCodexQuota，问 Codex 服务）
+//   setQuotaAggregate(on)   额度小窗合并显示各家 AI 的额度（设置里的开关，默认关）
+//   handleClick(kind)       单击 = pat（摸摸头），右键菜单「戳一下」= poke
+//   playEgg(force)          彩蛋
+
+const MOTION = {
+  idle: 'm-bob', listening: 'm-hop', thinking: 'm-rock', reading: 'm-rock', writing: 'm-bob', running: 'm-quick',
+  searching: 'm-sway', delegating: 'm-sway', happy: 'm-jump', proud: 'm-hop', oops: 'm-shake', surprised: 'm-jolt',
+  pat: 'm-sway', sleeping: 'm-slow', tired: 'm-slow', hum: 'm-sway', stretch: 'm-squish', yawn: 'm-squish', drawing: 'm-rock',
+  pop: 'm-hop', pretend: 'm-bob', caught: 'm-shake', bye: 'm-dash',
+  // 角色专属姿态（没列出的默认轻轻浮动）
+  deepthink: 'm-slow', swim: 'm-sway', eat: 'm-bob', slack: 'm-slow', pout: 'm-jolt',
+  reset: 'm-jump', feast: 'm-bob', compact: 'm-squish', sorry: 'm-slow', clawd: 'm-sway', float: 'm-float',
+  asking: 'm-hop', update: 'm-gift',
+  // 甩她 / 红温
+  annoyed: 'm-rock', puffed: 'm-jolt', redhot: 'm-angry', sulk: 'm-slow', dizzy: 'm-dizzy', coaxed: 'm-sway', forgiven: 'm-hop',
+  // 按时段 / 节日打招呼
+  greet_morning: 'm-hop', greet_noon: 'm-bob', greet_afternoon: 'm-sway', greet_evening: 'm-sway', greet_night: 'm-slow', greet_dawn: 'm-slow',
+  fest_halloween: 'm-gift', fest_christmas: 'm-gift', fest_newyear: 'm-jump', fest_spring: 'm-gift', fest_lantern: 'm-gift',
+  fest_dragonboat: 'm-gift', fest_midautumn: 'm-gift', fest_national: 'm-hop',
+}
+const LOCAL_LINES = {
+  idle: ['……', '在呢'], pat: ['嘿嘿', '（蹭蹭）'], surprised: ['诶？！'], hum: ['♪～'], stretch: ['伸个懒腰～'],
+  yawn: ['哈啊……'], sleeping: ['zZz'], tired: ['有点累了…'],
+}
+Object.assign(LOCAL_LINES, CodexResets.LINES)   // 重置提醒的默认台词（角色自己写了同名键就用角色的）
+// 新加的姿态还没画立绘时，先用哪张顶上
+const POSE_FALLBACK = { compact: 'writing', reset: 'happy', feast: 'eat', sorry: 'listening', asking: 'listening', update: 'happy', bye: 'happy',
+  reset_check: 'thinking', reset_bell: 'reset', reset_hope: 'happy', reset_maybe: 'hum', reset_nope: 'sulk',   // Codex 重置提醒（见 codex-resets.js）
+  busy_left: 'thinking', busy_right: 'thinking', swamped_left: 'busy_left', swamped_right: 'busy_right', edge_left: 'idle', edge_right: 'idle', edge_left_peek: 'edge_left', edge_right_peek: 'edge_right',
+  annoyed: 'pout', puffed: 'pout', redhot: 'pout', sulk: 'pout', pout: 'surprised', dizzy: 'oops', coaxed: 'pat', forgiven: 'happy' }
+const TRANSIENT = { happy: 5000, proud: 6000, oops: 4000, surprised: 3000, pat: 4000, hum: 4000, stretch: 3200, yawn: 3000,
+  annoyed: 4500, puffed: 5000, dizzy: 3000, coaxed: 3500, forgiven: 5000 }
+for (const p of Object.keys(MOTION)) if (p.startsWith('greet_')) TRANSIENT[p] = 5500; else if (p.startsWith('fest_')) TRANSIENT[p] = 6500
+const DWELL = 2500              // 每个状态至少停留这么久，太快的切换合并成最后一个
+const BACK_TO_THINKING = 1500   // 工具做完后等这么久没有新工具，才回到「思考」
+const LISTEN_TO_THINKING = 1800 // 收到消息先「听」，稍后自动转「思考」
+const SLEEP_AFTER = 10 * 60 * 1000
+
+const $ = id => document.getElementById(id)
+const pick = list => list[Math.floor(Math.random() * list.length)]
+let manifest = { characters: {} }
+let charId = null, pose = null, poseSince = 0, currentUrl = '', swappedAt = 0
+let active = document.getElementById('a'), spare = document.getElementById('b')
+let tucked = null   // 贴边缩着：'left' / 'right'（见「贴边」）
+let tuckedPeek = false   // 缩着时鼠标移上来：探出来、好奇地看着你
+let shownAt = 0, pending = null, thinkTimer = null, revertTimer = null
+let lastActive = Date.now()
+const charState = {}, quota = {}, seenTool = {}, lastTrouble = {}
+
+const char = () => manifest.characters[charId]
+// 当前角色是不是也在响应 id 这个 AI 的事件（character.json 的 reactTo；代码里叫“代演 standIn”，见 stand-in.js）：
+// 是的话它的状态 / 多会话 / 庆祝也由她来演
+const standsIn = id => StandIn.covers(manifest?.characters?.[charId]?.reactTo, charId, id)
+const linesOf = p => (char()?.lines && char().lines[p]) || LOCAL_LINES[p]
+function framesFor(p) {
+  const c = char(); if (!c) return []
+  for (let q = p, i = 0; q && i < 4; q = POSE_FALLBACK[q], i++) if (c.poses[q]) return c.poses[q]   // 没画的顺着替补往下找
+  return c.poses.idle || c.poses.default || []
+}
+
+// ---- 画面 ----
+// 两张图轮流交叉淡入：新图加载好之后再盖上来，旧图淡出，不会出现空白。
+// 每次换图都清掉旧的 onload，回调里再核对一次身份，避免过期回调把两张图的前后顺序搅乱。
+const imgA = $('a'), imgB = $('b')
+function showImage(url, instant) {
+  if (!url || url === currentUrl) return
+  currentUrl = url
+  swappedAt = Date.now()
+  imgA.onload = imgB.onload = null
+  if (instant) {  // 换角色时舞台是隐藏的，直接换图，不要和上一个角色叠在一起
+    spare.classList.remove('on'); spare.removeAttribute('src')
+    active.src = url; active.classList.add('on')
+    return
+  }
+  const next = spare
+  next.onload = () => {
+    next.onload = null
+    if (currentUrl !== url || next !== spare) return
+    next.classList.add('on'); active.classList.remove('on')
+    spare = active; active = next
+    swappedAt = Date.now()
+  }
+  next.src = url
+}
+// 兜底：任何时候都保证正好有一张图在显示
+setInterval(() => {
+  if (active === spare) spare = active === imgA ? imgB : imgA
+  if (!active.classList.contains('on') && !spare.classList.contains('on')) {
+    if (!active.getAttribute('src') && currentUrl) active.src = currentUrl
+    active.classList.add('on')
+  }
+}, 2000)
+
+// instant：同一个姿态里只是数字变了（比如更新进度），直接换掉，不淡出淡入
+function setFx(p, instant) {
+  const fx = $('fx')
+  const render = () => {
+    // 角色可以在 character.json 的 fx 里把某个姿态的特效换成 effects.js 里的其他特效，比如 DeepSeek 思考时冒泡泡
+    const named = char()?.fx?.[p]
+    const inner = !window.CrossFx ? '' : named && CrossFx.named?.[named] ? CrossFx.named[named] : CrossFx.surroundings(p)
+    fx.innerHTML = inner ? `<svg viewBox="0 0 ${CrossFx.CW} ${CrossFx.CH}" xmlns="http://www.w3.org/2000/svg">${inner}</svg>` : ''
+    fx.classList.remove('hide')
+  }
+  if (instant) { render(); return }
+  fx.classList.add('hide')
+  setTimeout(render, 220)
+}
+function setPose(p, instant) {
+  if (tucked) p = `edge_${tucked}${tuckedPeek ? '_peek' : ''}`   // 缩在边上：一直扒着，别的动作等她出来再演
+  if (p === pose) return
+  pose = p; poseSince = Date.now()
+  const frames = framesFor(p)
+  showImage(instant ? frames[0] : pick(frames), instant)
+  $('body').className = MOTION[p] || 'm-bob'
+  noteRest(p)
+  const aura = (window.CrossFx && CrossFx.AURA[p]) || ['#ffd9b0', .35]
+  document.documentElement.style.setProperty('--aura', aura[0])
+  document.documentElement.style.setProperty('--aura-o', Math.min(.75, aura[1] * 1.4))
+  setFx(p)
+}
+// 名牌上的名字：设置里可以关掉（额度照常显示）
+function setShowName(on) { document.documentElement.classList.toggle('no-name', !on) }
+// 文字大小（设置里和人物大小分开调）：外壳交来人物大小、文字大小、锁没锁；这里定好文字区域放大多少（--k），
+// 把画布尺寸交回外壳去设窗口（窗口 = 画布 × 人物大小）。规则在 text-size.js；锁着时 k = 1，和以前一样
+let usageFooter = false
+function setUsageFooter(text, detail) {
+  usageFooter = true
+  document.documentElement.classList.add('usage-footer')
+  $('taskTokens').textContent = text || '今日 Token  —'
+  $('taskTokens').title = (detail || '') + '\n点击查看任务 Token 统计'
+}
+function setSizes(size, textSize, linked) {
+  const L = TextSize.layout(size, TextSize.effectiveText(size, textSize, linked), usageFooter)
+  document.documentElement.style.setProperty('--k', String(L.k))
+  return JSON.stringify({ w: L.w, h: L.h, foot: L.foot })
+}
+// 背景光晕：'auto'（跟着系统深浅色）/ 'on' / 'off'，由宿主调用
+function setAuraMode(mode) {
+  const c = document.documentElement.classList
+  c.toggle('aura-on', mode === 'on')
+  c.toggle('aura-off', mode === 'off')
+}
+// 能点到的区域（网页像素，[x, y, 宽, 高]）：桌宠本体、气泡、名牌、额度。窗口其余透明的地方让点击穿过去，
+// 点到后面的窗口（窗口比桌宠大，是给动作、气泡留的空间）
+function hitRects() {
+  const out = []
+  if (tucked) {   // 缩在边上：只有露出来的那截能点 / 能让她探出来
+    const b = shownRect()
+    return JSON.stringify(b ? [[b.left - 4, b.top - 4, b.width + 8, b.height + 8].map(Math.round)] : [])
+  }
+  for (const id of ['body', 'bubble', 'caption', 'quota', 'taskTokens', 'newsCard']) {
+    const el = $(id)
+    if (!el || (id === 'bubble' && el.classList.contains('hide')) || el.classList.contains('hidden')) continue
+    const cs = getComputedStyle(el)
+    if (cs.display === 'none' || cs.visibility === 'hidden') continue
+    const r = el.getBoundingClientRect()
+    if (r.width < 1 || r.height < 1) continue
+    out.push([r.left - 4, r.top - 4, r.width + 8, r.height + 8].map(Math.round))
+  }
+  return JSON.stringify(out)
+}
+function sink() { $('wrap').classList.remove('surface'); $('wrap').classList.add('sunk') }
+function surface() {
+  const w = $('wrap')
+  w.classList.remove('sunk', 'surface'); void w.offsetWidth; w.classList.add('surface')
+  setTimeout(() => w.classList.remove('surface'), 500)
+}
+// 手动退出前的告别：这句话钉住，退出前不让别的台词或清空盖掉
+let farewellLine = null
+// 从菜单退出：挥手道别（没画 bye 立绘的先用 happy），最后一秒转身走开。
+// line 为空时说一句她自己的道别台词；ms 是外壳多久之后退出
+function farewell(line, ms = 2000) {
+  if (multi) { const m = multi; multi = null; clearInterval(m.flipTimer); clearTimeout(m.recheck); clearTimeout(m.chatter); clearTimeout(m.sayTimer); for (const c of m.cards.values()) c.el.remove(); $('more').classList.remove('on') }
+  if (!egg) {
+    clearTimeout(thinkTimer); clearTimeout(stuckTimer); updatingNow = false
+    show('bye', true)
+    $('body').className = 'm-bob'   // 先挥着手轻轻晃，别一上来就走（bye 的动作是彩蛋访客的「走开」）
+    setTimeout(() => { $('body').className = 'm-leave' }, Math.max(0, ms - 1100))
+  }
+  farewellLine = line || pick(linesOf('bye') || ['']) || ''
+  say(farewellLine)
+}
+function say(line) {
+  if (farewellLine !== null && line !== farewellLine) return
+  const b = $('bubble')
+  if (!line) { b.classList.add('hide'); return }
+  b.textContent = line
+  b.classList.remove('hide')
+}
+// ---- Codex 重置提醒（设置里默认关；数据来自第三方网站 codex-resets.com，判断见 codex-resets.js）----
+// 只对 GPT 生效：官方提前宣布了重置，额度下方多一行；右键「会重置吗？」（外壳调 askReset）她按预测分档回答；
+// 出现新的强预测 / 新宣布，她闲着时主动说一次。连不上那个网站时安静失败（国内网络常见）
+const RESETS_URL = 'https://codex-resets.com/api/v1/status'
+let resetsOn = false, resetsData = null, resetsAt = 0, resetsTimer = null, codexResetSeenAt = 0, resetsWaiting = false
+let devResetsSaved = null   // 开发者控制台预演中：预演前的真实开关（见 devResetsPlay）
+function setCodexResets(on) {
+  resetsOn = !!on
+  clearTimeout(resetsTimer)
+  if (!resetsOn) { resetsData = null; resetsAt = 0; renderQuota(); return }
+  pollResets()
+}
+// 查一次：成功更新 resetsData。返回 { ok: 这次查到了没有, wait: 下次多久后再查（毫秒）}。
+// 失败时保留上次查到的（额度下方那一行、主动提醒照用：官方宣布不会因为断网就失效），但问她时照实说连不上
+async function fetchResets() {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 10000)
+  const fail = { ok: false, wait: 10 * 60 * 1000 }
+  try {
+    const r = await fetch(RESETS_URL, { signal: ctl.signal, cache: 'no-store' })
+    if (r.status === 429) return { ok: false, wait: (parseInt(r.headers.get('Retry-After'), 10) || 1800) * 1000 }
+    if (!r.ok) return fail
+    const d = CodexResets.parse(await r.json())
+    if (!d) return fail
+    // 查的途中关了开关、或开发者控制台正在用假数据预演（开始预演前发出的查询这时才回来）：不写回
+    if (resetsOn && !devResetsSaved) { resetsData = d; resetsAt = Date.now() }
+    return { ok: true, wait: 30 * 60 * 1000 }
+  } catch { return fail } finally { clearTimeout(timer) }
+}
+async function pollResets() {
+  clearTimeout(resetsTimer)
+  const { wait } = await fetchResets()
+  if (!resetsOn || devResetsSaved) return   // 关了，或正在预演（演完 devResetsDone 会重新开始查）
+  renderQuota()
+  announceReset()
+  clearTimeout(resetsTimer)   // 查的途中问她时可能已经续过一个定时：只留一个
+  resetsTimer = setTimeout(pollResets, wait)
+}
+function resetsTold(add) {
+  let list = []
+  try { list = JSON.parse(localStorage.getItem('crosspet-resets-told')) || [] } catch {}
+  if (add) { list = [...list.filter(x => x !== add), add].slice(-50); try { localStorage.setItem('crosspet-resets-told', JSON.stringify(list)) } catch {} }
+  return list
+}
+// 挑一句台词填空；没给概率时只挑不含 {chance} 的句子（都含就退回默认台词里不含的）
+function pickLine(key, vars) {
+  let list = linesOf(key) || ['']
+  if (!('chance' in vars)) {
+    const ok = list.filter(l => !l.includes('{chance}'))
+    list = ok.length ? ok : (CodexResets.LINES[key] || ['']).filter(l => !l.includes('{chance}'))
+    if (!list.length) list = ['']
+  }
+  return CodexResets.fill(pick(list), vars)
+}
+// data：按哪份数据回答（null = 连不上那个网站）
+function tellReset(data = resetsData) {
+  const a = CodexResets.answer(data, Date.now() / 1000, codexResetSeenAt)
+  show(a.pose, true)
+  say(pickLine(a.key, a.vars))
+  clearTimeout(revertTimer)
+  revertTimer = setTimeout(() => { setPose(restPose()); say('') }, 8000)
+}
+// 右键「会重置吗？」：先想一下，每次都现查（是你点的、不常点，查一次不费事）；这次没查到就照实说连不上，不拿旧结果顶替
+async function askReset() {
+  if (!resetsOn || charId !== 'gpt' || egg) return
+  clearTimeout(revertTimer)
+  show('reset_check', true)   // 刷手机查一下（没画就是 thinking）
+  say(pick(linesOf('thinking') || ['……']))
+  const started = Date.now()
+  let ok = true
+  if (!devResetsSaved) {   // 开发者控制台预演：用它给的假数据，不联网
+    const r = await fetchResets()
+    ok = r.ok
+    if (resetsOn) { clearTimeout(resetsTimer); resetsTimer = setTimeout(pollResets, r.wait); renderQuota() }   // 问的途中关了开关：不再续上定时
+  }
+  await new Promise(r => setTimeout(r, Math.max(0, 1200 - (Date.now() - started))))   // 至少想 1.2 秒：一下子就查完、或一下子就连不上时也看得见她在想
+  if (charId === 'gpt' && !egg) tellReset(ok ? resetsData : null)
+}
+// 主动说一次：只在她是 GPT、闲着时说；不是 GPT 就等 setCharacter 切到 GPT 时再调
+function announceReset() {
+  if (!resetsOn || charId !== 'gpt' || resetsWaiting) return
+  const a = CodexResets.toAnnounce(resetsData, Date.now() / 1000, codexResetSeenAt, resetsTold())
+  if (!a) return
+  resetsWaiting = true
+  let tries = 0
+  const attempt = () => {
+    // 等的途中过期了、宣布已经执行了：不说了
+    if (!resetsOn || charId !== 'gpt' || CodexResets.toAnnounce(resetsData, Date.now() / 1000, codexResetSeenAt, resetsTold())?.id !== a.id) { resetsWaiting = false; return }
+    // 闲着才说：额度紧张时她的待机样子是 tired、闲久了会睡着，这时也算闲着（重置的消息这时最有用）；
+    // tired / sleeping 时气泡里一直挂着「额度快用完了」「zZz」这种待机台词，可以直接盖过去，不用等它收起
+    const resting = pose === 'idle' || pose === 'tired' || pose === 'sleeping'
+    const quiet = $('bubble').classList.contains('hide') || pose !== 'idle'
+    if (resting && quiet && !egg && aiActivity() !== 'work') {
+      resetsWaiting = false; resetsTold(a.id); tellReset(); return
+    }
+    if (++tries < 30) setTimeout(attempt, 20000); else resetsWaiting = false
+  }
+  setTimeout(attempt, 3000)
+}
+// 开发者控制台「重置提醒」场景：不联网，用假数据演一档（data 是接口原样的 JSON，null = 连不上）；devResetsDone 恢复真实的
+function devResetsPlay(data) {
+  if (!devResetsSaved) devResetsSaved = { on: resetsOn }
+  resetsOn = true; clearTimeout(resetsTimer)
+  resetsData = data ? CodexResets.parse(data) : null; resetsAt = Date.now()
+  renderQuota(); askReset()
+}
+function devResetsDone() {
+  if (!devResetsSaved) return
+  const was = devResetsSaved.on; devResetsSaved = null
+  resetsOn = false; setCodexResets(was)
+}
+// 额度下方那一行（只在官方宣布、还没执行时有）
+function appendResetNotice(el) {
+  if (!resetsOn || charId !== 'gpt') return
+  const t = CodexResets.notice(resetsData, codexResetSeenAt)
+  if (!t) return
+  const line = document.createElement('div')
+  line.className = 'notice'
+  line.textContent = t
+  if (el.className === 'agg') line.style.gridColumn = '1 / -1'   // 合并显示时是表格：这一行横跨整张表，放在最下面
+  el.appendChild(line)
+}
+// 额度聚合（设置里「合并显示各家额度」，默认关）：小窗把各家 AI 的额度排成几行，前面标名字；
+// 关着时只显示当前角色自己的额度。外壳在设置变化 / 启动时调 setQuotaAggregate
+let quotaAggregate = false
+function setQuotaAggregate(on) { quotaAggregate = !!on; renderQuota() }
+function renderQuota() {
+  const el = $('quota')
+  el.style.gridTemplateColumns = ''
+  if (egg) { el.replaceChildren(); el.className = ''; return }
+  if (usageFooter) {
+    // 合并版固定展示 GPT 额度，角色只决定外观。
+    QuotaAggregate.render(el, QuotaAggregate.rows(quota, 'gpt', ['gpt'], () => 'GPT'))
+    if (!el.childElementCount) { el.className = ''; el.textContent = 'GPT 额度暂不可用' }
+    return
+  }
+  // 写了 reactTo（代演）的角色，即使没开「合并显示各家额度」，小窗也列出她响应的那几家
+  // （不然她自己没有额度，小窗一直是空的）
+  const reactTo = manifest?.characters?.[charId]?.reactTo
+  if (quotaAggregate || reactTo) {
+    let ids = Object.keys(manifest?.characters || {}).filter(id => !manifest.characters[id].egg)
+    if (!quotaAggregate) ids = StandIn.quotaIds(reactTo, charId, ids)
+    QuotaAggregate.render(el, QuotaAggregate.rows(quota, charId, ids, id => manifest?.characters?.[id]?.name || id))
+    appendResetNotice(el)
+    return
+  }
+  // 多个额度窗口 / 额度池用「｜」隔开，每个占一行，不在半中间折行
+  const q = quota[charId]
+  el.replaceChildren(...(q?.text || '').split(/\s*｜\s*/).filter(Boolean).map(t => {
+    const line = document.createElement('div'); line.textContent = t; return line
+  }))
+  el.className = q?.low ? 'low' : ''
+  appendResetNotice(el)
+}
+// 临时动作（打招呼、开心、被摸头……）演完回到哪：AI 还在干活 / 等你回答就回到那个样子，
+// 不然一条要跑好几分钟的命令中途她演了个招呼，之后一直没有新事件，就会站着不动
+function restPose() {
+  if (aiActivity()) { const p = charState[charId].pose; return p === 'listening' ? 'thinking' : p }
+  return quota[charId]?.low ? 'tired' : 'idle'
+}
+// 这个角色有没有某个姿态的专属立绘
+const hasPose = p => !!char()?.poses?.[p]
+// 角色外观相关的 CSS 变量：气泡边框、读书时飘的字符颜色
+function applyLook(c) {
+  const root = document.documentElement.style
+  root.setProperty('--accent', c.accent || '#e0b48a')
+  root.setProperty('--glyph', c.glyph?.fill || '#b5651d')
+  root.setProperty('--glyph-stroke', c.glyph?.stroke || 'none')
+}
+
+// 换到某个状态：遵守最短停留；短暂状态过后回到常态（闲着 / 额度紧张时累了）
+function show(p, urgent) {
+  if (updatingNow || farewellLine !== null) return   // 正在更新（一直举着礼物）/ 正在道别：AI 的工作事件先不打断
+  if (p === 'idle') p = restPose()   // AI 发来「闲着」（比如 DSH 新会话）时也要看额度：快用完了就是累 / 饿的样子
+  const wait = shownAt + DWELL - Date.now()
+  clearTimeout(pending)
+  if (!urgent && wait > 0) { pending = setTimeout(() => show(p, true), wait); return }
+  shownAt = Date.now()
+  clearTimeout(revertTimer)
+  if (p !== pose) {
+    setPose(p)
+    const lines = linesOf(p)
+    say(lines ? pick(lines) : '')
+  }
+  if (TRANSIENT[p]) revertTimer = setTimeout(() => { setPose(restPose()); say('') }, TRANSIENT[p])
+}
+
+// ---- 由 Swift 调用 ----
+function init(m) {
+  manifest = m
+  for (const c of Object.values(m.characters))
+    for (const list of Object.values(c.poses)) for (const u of list) { const i = new Image(); i.onerror = () => window.chrome?.webview?.postMessage({ imageError: u }); i.src = u }   // 预加载失败也报（页面里的监听收不到）
+  // 没有当前角色时取 id 排序后的第一个：macOS 的清单是 Swift 字典序列化出来的，key 顺序每次启动都不同（Windows 本来就是排好序的）
+  if (!charId || !manifest.characters[charId]) setCharacter(Object.keys(m.characters).sort().find(k => !m.characters[k].egg), true)
+  else { $('caption').textContent = char().name }
+}
+
+// 登场台词冷却：同一个角色 30 分钟内只打一次招呼，在几个 AI 的 App 之间来回切时不用每次都听「XX 来了」
+const GREET_COOLDOWN = 30 * 60 * 1000
+const greetedAt = {}
+function greetDue(id) {
+  if (Date.now() - (greetedAt[id] || 0) < GREET_COOLDOWN) return false
+  greetedAt[id] = Date.now()
+  return true
+}
+
+function setCharacter(id, quiet) {
+  if (egg) { clearEggTimers(); egg = null; charId = null }
+  if (!manifest.characters[id] || manifest.characters[id].egg || id === charId) return
+  if (multi) { const m = multi; multi = null; clearInterval(m.flipTimer); clearTimeout(m.recheck); clearTimeout(m.chatter); clearTimeout(m.sayTimer); for (const c of m.cards.values()) c.el.remove(); $('more').classList.remove('on') }
+  setTimeout(refreshMulti, 700)   // 换过去的角色如果也有好几个对话在干活，接着演
+  setTimeout(preloadEdges, 900)
+  const stage = $('stage')
+  const p = $('poof'); p.classList.remove('go'); void p.offsetWidth; p.classList.add('go')
+  stage.classList.add('swap')
+  setTimeout(() => {
+    charId = id; pose = null; currentUrl = ''
+    const c = char()
+    applyLook(c)
+    $('blink').src = c.blink || ''
+    $('caption').textContent = c.name
+    const s = charState[id]
+    const busy = s && Date.now() / 1000 - s.ts < 60 && !TRANSIENT[s.pose] && s.pose !== 'idle'
+    setPose(busy ? s.pose : restPose(), true)
+    // 这个时段 / 节日还没打过招呼：演专属的登场动作；打过了就用平常那句（30 分钟冷却）
+    if (quiet) say('')
+    else if (!timeGreet(id, busy)) say(greetDue(id) ? (c.greeting || `${c.name} 在这儿～`) : '')
+    renderQuota()
+    if (id === 'gpt') setTimeout(announceReset, 2000)   // 不是 GPT 时攒下的重置提醒，切过来再说
+    const pend = pendingCelebration[id]
+    if (pend && Date.now() - pend.at < 10 * 60 * 1000) setTimeout(() => celebrate(id, pend.ev), 1200)
+    // 新立绘加载好再淡入，避免先看到空白
+    const reveal = () => stage.classList.remove('swap')
+    if (active.complete && spare.complete) setTimeout(reveal, 60); else setTimeout(reveal, 160)
+  }, 330)
+}
+
+// ---- 按时段 / 节日打招呼 ----
+// 每个角色在每个时段（早上、中午、下午、晚上、深夜、凌晨）第一次见面时演一次专属动作；节日当天第一次见面换成节日装扮。
+// 打过招呼的记在本机（localStorage），重启 App 不会重复。没画立绘的角色只说台词；连台词都没有就用平常那句。
+// 农历节日的公历日期（春节、元宵、端午、中秋），用 lunardate 算好写死，2036 年之后需要补
+const LUNAR = {
+  2026: ['02-17', '03-03', '06-19', '09-25'], 2027: ['02-06', '02-20', '06-09', '09-15'], 2028: ['01-26', '02-09', '05-28', '10-03'],
+  2029: ['02-13', '02-27', '06-16', '09-22'], 2030: ['02-03', '02-17', '06-05', '09-12'], 2031: ['01-23', '02-06', '06-24', '10-01'],
+  2032: ['02-11', '02-25', '06-12', '09-19'], 2033: ['01-31', '02-14', '06-01', '09-08'], 2034: ['02-19', '03-05', '06-20', '09-27'],
+  2035: ['02-08', '02-22', '06-10', '09-16'], 2036: ['01-28', '02-11', '05-30', '10-04'],
+}
+const pad2 = n => String(n).padStart(2, '0')
+const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+function timeSlot(d) {
+  const h = d.getHours()
+  return h >= 23 || h < 2 ? 'night' : h < 5 ? 'dawn' : h < 11 ? 'morning' : h < 14 ? 'noon' : h < 18 ? 'afternoon' : 'evening'
+}
+function festivalOf(d) {
+  const y = d.getFullYear(), md = ymd(d).slice(5), [spring, lantern, dragonboat, midautumn] = LUNAR[y] || []
+  // 单日的节日优先（中秋偶尔落在国庆假期里）
+  if (md === lantern) return 'lantern'
+  if (md === dragonboat) return 'dragonboat'
+  if (md === midautumn) return 'midautumn'
+  if (md === '10-31') return 'halloween'
+  if (md === '12-24' || md === '12-25') return 'christmas'
+  if (md === '01-01') return 'newyear'
+  if (spring) {
+    const days = (d - new Date(`${y}-${spring}T00:00:00`)) / 86400000
+    if (days >= 0 && days < 7) return 'spring'   // 初一到初七
+  }
+  if (md >= '10-01' && md <= '10-07') return 'national'
+  return null
+}
+function greetMemory(update) {
+  let m = {}
+  try { m = JSON.parse(localStorage.getItem('crosspet-greeted')) || {} } catch {}
+  if (update) { update(m); try { localStorage.setItem('crosspet-greeted', JSON.stringify(m)) } catch {} }
+  return m
+}
+// 返回 true = 打过招呼了（演了专属动作或说了专属台词）
+function timeGreet(id, busy) {
+  const c = manifest.characters[id]
+  if (!c || c.egg) return false
+  const now = new Date(), fest = festivalOf(now), slot = timeSlot(now)
+  const day = ymd(new Date(now - 5 * 3600000))   // 凌晨 5 点前还算前一天：深夜 23–2 点是同一个时段
+  const slotKey = `slot:${day}:${slot}`, festKey = `fest:${ymd(now)}:${fest}`
+  const done = greetMemory()[id] || []
+  const has = p => !!(c.poses?.[p] || c.lines?.[p])
+  let p = null
+  if (fest && !done.includes(festKey) && has('fest_' + fest)) p = 'fest_' + fest
+  else if (!done.includes(slotKey) && has('greet_' + slot)) p = 'greet_' + slot
+  if (!p) return false
+  greetMemory(m => { m[id] = [...(m[id] || []).filter(k => k.includes(day) || k.includes(ymd(now))), slotKey, ...(fest ? [festKey] : [])] })
+  greetedAt[id] = Date.now()
+  const line = pick(c.lines?.[p] || [c.greeting || ''])
+  if (!busy && c.poses?.[p]) { show(p, true); say(line) }   // 正在干活时不打断，只说一句
+  else say(line)
+  return true
+}
+// 一直开着的时候，进入新的时段 / 节日也打个招呼：只在闲着、最近有人在（没睡着）的时候
+setInterval(() => {
+  if (!charId || egg || devHeld() || devActive || updatingNow || char()?.egg) return
+  if ((pose !== 'idle' && pose !== 'tired') || Date.now() - lastActive > SLEEP_AFTER) return
+  timeGreet(charId, false)
+}, 60000)
+
+// 正在下载 / 安装新版本：一直举着礼物，右上角小窗按真实进度走，气泡显示百分比。由宿主调用；
+// 装好后新版会自己重新打开，所以不用收尾；更新失败时宿主调 endUpdate() 回到常态
+let updatingNow = false
+function setUpdateProgress(pct, line) {
+  updatingNow = true
+  if (egg) endEgg()
+  clearTimeout(pending); clearTimeout(revertTimer)
+  const shown = window.CrossFx?.updateProgress
+  if (window.CrossFx) CrossFx.updateProgress = pct
+  if (pose !== 'update') setPose('update', true)
+  else if (shown !== pct) setFx('update', true)
+  say(line)
+}
+function endUpdate() {
+  if (!updatingNow) return
+  updatingNow = false
+  if (window.CrossFx) CrossFx.updateProgress = null
+  setPose(restPose()); say('')
+}
+
+// 有新版本：演几秒「收到礼物」（没画 update 立绘时用 happy），气泡一直留着，等下次说别的话再换掉
+function notifyUpdate(tag) {
+  if (egg) return
+  show('update', true)
+  say(`有新版本 ${tag} 啦～右键菜单里点「更新」就好`)
+  clearTimeout(revertTimer)
+  revertTimer = setTimeout(() => setPose(restPose()), 6500)
+}
+
+// ---- 贴边 ----
+// 外壳把她拖到屏幕左 / 右边缘时调 setTucked('left' / 'right')，跑出来时 setTucked(null)。
+// dockCut 告诉外壳「切口」在窗口里的横坐标（网页像素）：贴边立绘是画面边框从她身上切过去，切口就是立绘那条边；
+// 没画贴边立绘时用平常的立绘，切口在她身体正中，屏幕边缘挡住一半
+// peek：鼠标移到露出来的那截上时换成探出来更多、好奇地看着你的那张（edge_*_peek），切口照样对齐屏幕边缘
+function setTucked(side, peek = false) {
+  if (side === tucked && !!peek === tuckedPeek) return
+  // 「新功能」卡片开着时缩回边上：卡片挂在屏幕边、点不到——先收起，等她再出来、闲着的时候重新弹
+  if (side && !$('newsCard').classList.contains('hidden')) { hideNews(); queueNews(newsShown, 20000) }
+  const was = tucked, edge = side || was
+  preloadEdges()
+  const before = shownRect()
+  tucked = side; tuckedPeek = !!side && !!peek
+  const cl = document.documentElement.classList
+  cl.toggle('tucked', !!side)
+  cl.toggle('tucked-left', side === 'left'); cl.toggle('tucked-right', side === 'right')
+  cl.toggle('tucked-art', !!side && !!char()?.poses?.[`edge_${side}`])
+  clearTimeout(thinkTimer); clearTimeout(pending); clearTimeout(revertTimer)
+  if (side) { say(''); setPose(`edge_${side}${tuckedPeek ? '_peek' : ''}`, true) }
+  else if (was) { pose = null; show(restPose(), true) }
+  slideFrom(before, edge)
+  if (!!side !== !!was) { repaintNow(); repaintSoon() }
+}
+// 透明窗口里藏起额度、名牌时，WebKit 偶尔少擦一行像素（页面有缩放时重绘范围取整），留下一条横线：
+// 过渡结束后让整页重新画一遍（切到独立图层再切回来）
+function repaintNow() {
+  const b = document.body
+  b.style.transform = 'translateZ(0)'
+  setTimeout(() => { b.style.transform = '' }, 60)
+}
+function repaintSoon() { setTimeout(repaintNow, 450) }
+// 换图前后她的位置不一样（贴着窗口边 ↔ 窗口中间）：先把舞台挪回原来的位置，再 0.3 秒滑过去，不要一下子跳
+// （不用 requestAnimationFrame：窗口在后台、刚从全屏回来时它可能不触发）
+function slideFrom(before, edge) {
+  const stage = $('stage'), img = active
+  const run = () => {
+    const after = shownRect()
+    if (!before || !after) return
+    const dx = edge === 'right' ? (before.left + before.width) - (after.left + after.width) : before.left - after.left
+    if (Math.abs(dx) < 2) return
+    stage.style.transition = 'none'
+    stage.style.transform = `translateX(${dx}px)`
+    void stage.offsetWidth
+    stage.style.transition = 'transform .3s ease-out'
+    stage.style.transform = ''
+    setTimeout(() => { stage.style.transition = '' }, 350)
+  }
+  if (img.complete && img.naturalWidth) run()   // 新图已经解码好（预加载过）：马上量
+  else img.addEventListener('load', run, { once: true })
+}
+// 贴边、探出来、待机的图先载入好：换图时不会有一两帧空白（闪一下）
+let preloaded = null
+function preloadEdges() {
+  if (preloaded === charId) return
+  preloaded = charId
+  for (const p of ['edge_left', 'edge_right', 'edge_left_peek', 'edge_right_peek', 'idle', 'tired']) for (const u of framesFor(p)) { const i = new Image(); i.src = u }
+}
+// 正在显示的立绘实际画出来的范围（object-fit: contain，按 object-position 对齐）
+function shownRect() {
+  const img = active, r = img.getBoundingClientRect(), nw = img.naturalWidth, nh = img.naturalHeight
+  if (!nw || !nh) return null
+  const scale = Math.min(r.width / nw, r.height / nh), w = nw * scale, h = nh * scale
+  const px = parseFloat(getComputedStyle(img).objectPosition) / 100
+  return { left: r.left + (r.width - w) * (isNaN(px) ? 0.5 : px), top: r.bottom - h, width: w, height: h }
+}
+function dockCut(side) {
+  const b = shownRect()
+  if (!b) return null
+  if (!char()?.poses?.[`edge_${side}`]) return Math.round(b.left + b.width / 2)
+  return Math.round(side === 'left' ? b.left : b.left + b.width)
+}
+
+// 刚更新完重新打开：开心一下告诉你现在是新版本（等登场招呼演完再说）
+// 刚更新完（外壳检测到这次打开的版本比上次新）：这版有新功能就在头顶弹一张卡片「这次多了 N 个新功能」（去看看 / 知道了），
+// 没有（纯修 bug 的版本）就照旧说一句。last：上次的版本（跳过几版的合在一起算）。文案和判断在 whats-new.js
+function justUpdated(version, last) {
+  const n = window.WhatsNew ? WhatsNew.since(WhatsNew.LIST, last, version).length : 0
+  if (!n) {
+    setTimeout(() => {
+      if (egg || farewellLine !== null) return
+      show('happy', true)
+      say(`更新好啦～现在是 ${version}`)
+    }, 6000)
+    return
+  }
+  queueNews(n, 6000)
+}
+// 等她闲下来再弹：不在彩蛋、AI 没在干活、没在道别 / 更新、没缩在边上；等不到就过一会儿再看，最多等 10 分钟（设置里的小红点还在）
+function queueNews(n, first) {
+  let tries = 0
+  const attempt = () => {
+    const calm = (pose === 'idle' || pose === 'tired') && !egg && aiActivity() !== 'work' && farewellLine === null && !updatingNow && !tucked
+    if (calm) { showNews(n); return }
+    if (++tries < 30) setTimeout(attempt, 20000)
+  }
+  setTimeout(attempt, first)
+}
+let newsTimer = null, newsShown = 0
+function showNews(n) {
+  newsShown = n
+  $('newsText').textContent = `更新好啦～这次多了 ${n} 个新功能`
+  show('happy', true)
+  say('')   // 放在 show 后面：show 会说一句开心的台词（「完成！」之类），留在卡片底下，卡片一收起就露出来
+  $('newsCard').classList.remove('hidden')
+  clearTimeout(newsTimer)
+  newsTimer = setTimeout(hideNews, 30000)   // 不点也会自己收起
+}
+function hideNews() { clearTimeout(newsTimer); $('newsCard').classList.add('hidden') }
+// 网页 → 外壳：macOS 走 pet 消息通道，Windows 走 WebView2 的 postMessage
+function toShell(msg) {
+  try { if (window.chrome?.webview) window.chrome.webview.postMessage(msg); else window.webkit?.messageHandlers?.pet?.postMessage(msg) } catch {}
+}
+
+// Claude 的配置被别的工具改掉了（比如 CC Switch 3.x 切换服务商会整个重写 settings.json），外壳已经接回去了：说一声
+function configHealed() {
+  if (egg || farewellLine !== null) return
+  const line = 'Claude 配置被改掉了，已接回～新会话生效'
+  say(line)
+  setTimeout(() => { if ($('bubble').textContent === line) say('') }, 9000)
+}
+
+// 换了衣服（皮肤）：外壳重新 init 过立绘清单后调它，正在显示的就是这个角色就重新换上
+function refreshLook(id) {
+  if (charId !== id || egg) return
+  charId = null; preloaded = null
+  setCharacter(id, true)
+}
+
+function setName(id, name) {
+  if (!manifest.characters[id]) return
+  manifest.characters[id].name = name
+  if (id === charId) $('caption').textContent = name
+}
+
+// 兜底：干活的样子（思考、读写、跑命令……）停了这么久没有任何新事件，就当这一轮已经停了，回去待机。
+// 有的 AI 被你中途打断时不发「结束」（Claude Code 标准钩子、Gemini CLI……），不然她会一直停在思考。
+// 「等你回答」不算：那是在等你，本来就可能很久
+const STUCK_AFTER = 3 * 60 * 1000
+const NOT_WORKING = new Set(['idle', 'sleeping', 'asking', 'tired', 'hungry', 'happy', 'proud', 'oops', 'surprised'])
+let stuckTimer = null
+function watchStuck() {
+  clearTimeout(stuckTimer)
+  stuckTimer = setTimeout(() => {
+    if (egg || multi || updatingNow || !pose || NOT_WORKING.has(pose) || pose.startsWith('greet_') || pose.startsWith('fest_')) return
+    clearTimeout(thinkTimer)
+    show('idle', true)
+    say('')
+  }, STUCK_AFTER)
+}
+
+// ---- 特效省电 ----
+// 实测（M 系列 Mac）：身边的 SVG 特效（星星、思考云、小卡片）是耗电大头，SVG 自己的时钟跑时整个桌宠占一个核的 16%～19%，
+// 停掉特效只剩 1.5%；人物浮动、光晕是 CSS 变换，几乎不花钱。所以只管特效：
+// - 暂停 SVG 自己的时钟，跟着屏幕刷新按帧推进（#fx、多会话卡片都算）：平时 60 帧（干活时约 11%），省电模式 30 帧（约 8%）。
+//   15 帧时画笔、终端里的字明显一顿一顿，用户反馈过，所以省电模式也不再往下压
+// - 闲着（待机 / 累 / 睡着）超过 30 秒（省电模式 10 秒）：特效淡出并停下；睡着的 zZz 保留，每秒 5 帧
+// - 窗口看不见（被挡住、锁屏、屏幕休眠）：外壳调 setPageHidden(true)，全部暂停
+const RESTING = new Set(['idle', 'tired', 'sleeping'])
+let powerSave = false, fxResting = false, pageHidden = false, fxClock = null, fxFps = 0, restTimer = null
+function fxTick() {
+  const now = performance.now()
+  for (const s of document.querySelectorAll('#fx svg, #cards svg')) {
+    if (s._fxT === undefined) { s.pauseAnimations(); s._fxT = s.getCurrentTime(); s._fxS = now }
+    else if (!s.animationsPaused()) {
+      // 窗口藏起来再露出来（macOS 切换桌面、被挡住又露出）时，WebKit 会自己把暂停的 SVG 动画重新开起来：
+      // 它自己的时钟和这里按帧拨的时间交替生效，终端里的字一帧在一帧不见、zZz 错位（#9 @SkywingJam 发现并录屏对照）。
+      // 重新停住，从上一帧的时间接着走（也不跨过藏起来的那段）
+      s.pauseAnimations(); s._fxT = s._fxLast ?? s.getCurrentTime(); s._fxS = now
+    }
+    s._fxLast = s._fxT + (now - s._fxS) / 1000
+    s.setCurrentTime(s._fxLast)
+  }
+}
+function applyFxRate() {
+  const fps = pageHidden ? 0 : fxResting ? (pose === 'sleeping' ? 5 : 0) : powerSave ? 30 : 60
+  $('fx').classList.toggle('rest', fxResting && pose !== 'sleeping' && !pageHidden)
+  document.documentElement.classList.toggle('frozen', pageHidden)
+  if (fps === fxFps && (fps === 0 || fxClock)) return
+  // 停过表（藏起来、闲着歇了）再开：从停下时的那一帧接着走，不一下子跳过停着的那段
+  if (fxFps <= 0 && fps > 0) { const now = performance.now(); for (const s of document.querySelectorAll('#fx svg, #cards svg')) if (s._fxLast !== undefined) { s._fxT = s._fxLast; s._fxS = now } }
+  fxFps = fps
+  clearInterval(fxClock); fxClock = null
+  fxTick()   // 新出现的先接管（停住自己的时钟）
+  if (fps > 0) {
+    // 跟着屏幕刷新出帧（隔几帧出一帧），节拍均匀；单用定时器和屏幕刷新对不齐，一帧停得长一帧停得短，移动的文字、画笔看着一抖一抖
+    if (!fxRaf) fxRaf = requestAnimationFrame(fxLoop)
+    // 兜底：窗口在后台、刚从全屏回来时 requestAnimationFrame 可能不触发，这时按定时器走
+    fxClock = setInterval(() => {
+      if (performance.now() - fxLast > 250) { fxLast = performance.now(); fxTick(); if (!fxRaf) fxRaf = requestAnimationFrame(fxLoop) }
+    }, 1000 / Math.min(fps, 10))
+  }
+}
+let fxRaf = 0, fxLast = 0
+function fxLoop(t) {
+  fxRaf = 0
+  if (fxFps <= 0) return
+  if (t - fxLast >= 1000 / fxFps - 4) { fxLast = t; fxTick() }
+  fxRaf = requestAnimationFrame(fxLoop)
+}
+// 新画上去的特效马上接管，别先按 60 帧跑一下
+new MutationObserver(() => fxTick()).observe(document.getElementById('stage'), { childList: true, subtree: true })
+function noteRest(p) {
+  clearTimeout(restTimer)
+  if (fxResting) { fxResting = false; applyFxRate() }
+  if (RESTING.has(p)) restTimer = setTimeout(() => { if (RESTING.has(pose)) { fxResting = true; applyFxRate() } }, powerSave ? 10000 : 30000)
+}
+function setPowerSave(on) { powerSave = !!on; fxFps = -1; noteRest(pose); applyFxRate() }
+function setPageHidden(h) { pageHidden = !!h; applyFxRate() }
+applyFxRate()
+
+// ---- 多会话：同一个 AI 好几个对话同时在干活 ----
+// 外壳把 <角色>-sessions.json（{会话id: {pose, event, ts}}）交过来。两个以上同时在干活时她「手忙脚乱」：
+// 左右两帧来回切（busy_left / busy_right；三个以上换更崩溃的 swamped_*），每个对话一张小卡片演它正在做的事，
+// 她转向哪边，哪边的卡片就亮。干完的卡片打绿勾、出错的变红抖一下，停几秒后消失；有对话在等你回答时她换成「等你回答」
+const sessions = {}         // 角色 → {会话id: {pose, event, ts}}
+const SESSION_DONE_SHOW = 4  // 干完 / 出错的卡片停几秒
+const SESSION_FLIP = 1500    // 左右两帧多久换一次
+let multi = null             // 正在演：{ side, flipTimer, cards: Map(会话id → {el, pose, shownAt, pending}), order: [会话id] }
+
+function setSessions(id, map) {
+  if (id === 'current') id = charId
+  sessions[id] = map || {}
+  refreshMulti()
+}
+function sessionKind(e, now) {
+  const age = now - Number(e.ts || 0)
+  if (e.pose === 'asking') return age < 600 ? 'ask' : null
+  if (e.pose === 'happy' || e.pose === 'proud') return age < SESSION_DONE_SHOW ? 'done' : null
+  if ((e.pose === 'oops' || e.pose === 'surprised') && e.event === 'Stop') return age < SESSION_DONE_SHOW ? 'error' : null
+  if (e.pose === 'idle' || e.pose === 'sleeping') return null
+  return age < STUCK_AFTER / 1000 ? 'work' : null   // 一轮中途某个工具出错：还在干活，只是卡片变红
+}
+// 当前角色要演的会话：她自己的，加上她响应的各家 AI 的（会话 id 各家不重复，直接合在一起）
+function currentSessions() {
+  const out = { ...(sessions[charId] || {}) }
+  for (const [host, map] of Object.entries(sessions)) if (standsIn(host)) Object.assign(out, map)
+  return out
+}
+function refreshMulti() {
+  const map = currentSessions(), now = Date.now() / 1000
+  const live = Object.entries(map).map(([sid, e]) => [sid, e, sessionKind(e, now)]).filter(x => x[2])
+  const busy = live.filter(x => x[2] === 'work' || x[2] === 'ask').length
+  if (!multi && (busy < 2 || egg || farewellLine !== null || updatingNow)) return
+  // 只剩一个（或没有）对话在干活：等干完 / 出错的卡片演完（几秒），她就恢复成平常一个对话的样子
+  if (multi && busy < 2 && !live.some(x => x[2] === 'done' || x[2] === 'error')) return endMulti()
+  if (!multi) startMulti()
+  lastActive = Date.now()
+  // 卡片顺序固定（先来的在前），不会跳来跳去；最多 4 张，多的显示「+N」
+  for (const [sid] of live) if (!multi.order.includes(sid)) multi.order.push(sid)
+  multi.order = multi.order.filter(sid => live.some(x => x[0] === sid))
+  const shown = multi.order.slice(0, 4)
+  const slots = shown.length <= 2 ? [[-6, 92], [190, 92]] : [[-6, 34], [190, 34], [-6, 152], [190, 152]]
+  for (const [sid, c] of multi.cards) if (!shown.includes(sid)) { c.el.classList.remove('on'); setTimeout(() => c.el.remove(), 400); multi.cards.delete(sid) }
+  shown.forEach((sid, i) => {
+    const [, e, kind] = live.find(x => x[0] === sid)
+    let c = multi.cards.get(sid)
+    if (!c) {
+      c = { el: document.createElement('div'), pose: null, shownAt: 0 }
+      c.el.className = 'scard'; c.el.innerHTML = '<svg></svg><div class="badge">✓</div>'
+      $('cards').appendChild(c.el); multi.cards.set(sid, c)
+      requestAnimationFrame(() => c.el.classList.add('on'))
+    }
+    c.el.style.left = slots[i][0] + 'px'; c.el.style.top = slots[i][1] + 'px'
+    c.side = i % 2 ? 'right' : 'left'
+    flipCard(c)
+    c.el.classList.toggle('done', kind === 'done')
+    c.el.classList.toggle('ask', kind === 'ask')
+    const bad = kind === 'error' || e.pose === 'oops'
+    if (bad && !c.el.classList.contains('error')) c.el.classList.add('error')
+    if (!bad) c.el.classList.remove('error')
+    setCardPose(c, kind === 'done' ? 'happy' : e.pose)
+  })
+  const extra = multi.order.length - shown.length
+  $('more').textContent = extra > 0 ? `+${extra}` : ''
+  $('more').classList.toggle('on', extra > 0)
+  multi.busy = busy
+  multi.asking = live.some(x => x[2] === 'ask')
+  multiPose()
+  // 干完的卡片过几秒自己消失：到时候再看一遍
+  clearTimeout(multi.recheck); multi.recheck = setTimeout(refreshMulti, 1000)
+}
+// 卡片换内容：同一张卡片至少停 1.2 秒，快的工具不会闪
+function setCardPose(c, p) {
+  if (c.pose === p) return
+  clearTimeout(c.pending)
+  const wait = c.shownAt + 1200 - Date.now()
+  if (wait > 0) { c.pending = setTimeout(() => setCardPose(c, p), wait); return }
+  c.pose = p; c.shownAt = Date.now()
+  const svg = c.el.querySelector('svg')
+  svg.setAttribute('viewBox', `0 0 ${CrossFx.CW} ${CrossFx.CH}`)
+  svg.innerHTML = CrossFx.cardProp(p)
+  try {   // 只留道具本身：按它实际占的范围裁。沿路径移动的小东西（画画的笔刷）原点在画布角上，量的时候先藏起来
+    const moving = [...svg.querySelectorAll('animateMotion')].map(a => a.parentNode)
+    moving.forEach(n => n.setAttribute('display', 'none'))
+    const b = svg.getBBox(), pad = 8
+    moving.forEach(n => n.removeAttribute('display'))
+    if (b.width > 0) svg.setAttribute('viewBox', `${b.x - pad} ${b.y - pad} ${b.width + pad * 2} ${b.height + pad * 2}`)
+  } catch {}
+  flipCard(c)
+}
+// 思考云是画在她右上方的，小尾巴朝左下指向她：卡片在她左边时左右翻过来，小尾巴才朝着她（有字的卡片不翻）
+function flipCard(c) {
+  const cloud = c.pose && CrossFx.cardProp(c.pose) === CrossFx.cardProp('thinking')
+  c.el.querySelector('svg').style.transform = cloud && c.side === 'left' ? 'scaleX(-1)' : ''
+}
+function startMulti() {
+  clearTimeout(thinkTimer); clearTimeout(pending); clearTimeout(revertTimer); clearTimeout(stuckTimer)
+  multi = { side: 'left', cards: new Map(), order: [], busy: 0, asking: false }
+  $('fx').classList.add('hide')
+  multi.flipTimer = setInterval(() => { if (multi && !multi.asking) { multi.side = multi.side === 'left' ? 'right' : 'left'; multiPose() } }, SESSION_FLIP)
+  chatterLater()
+}
+// 多会话的台词：刚手忙脚乱时、升级成太忙时、有对话开始等你回答时各说一句（台词在 character.json 的 busy / swamped / asking），4 秒后收起
+// 一直忙着的时候（比如好几个 Codex 对话跑很久）：隔 35～55 秒再嘟囔一句，不然开头那句说完就一直不吭声
+function chatterLater() {
+  if (!multi) return
+  clearTimeout(multi.chatter)
+  multi.chatter = setTimeout(() => {
+    if (!multi) return
+    if (!multi.asking && $('bubble').classList.contains('hide')) multiSay(multi.busy >= 3 ? 'swamped' : 'busy')
+    chatterLater()
+  }, 35000 + Math.random() * 20000)
+}
+function multiSay(kind) {
+  const line = pick(linesOf(kind) || [''])
+  if (!line) return
+  say(line)
+  clearTimeout(multi.sayTimer)
+  multi.sayTimer = setTimeout(() => { if ($('bubble').textContent === line) say('') }, 4000)
+}
+function multiPose() {
+  if (!multi) return
+  const level = multi.asking ? 'asking' : multi.busy >= 3 ? 'swamped' : 'busy'
+  if (level !== multi.said && (level !== 'busy' || !multi.said)) multiSay(level)   // 从太忙降回两个时不再说
+  multi.said = level
+  if (multi.asking) { if (pose !== 'asking') { setPose('asking'); $('fx').classList.add('hide') } }
+  else {
+    const p = `${multi.busy >= 3 ? 'swamped' : 'busy'}_${multi.side}`
+    if (pose !== p) { setPose(p, true); $('fx').classList.add('hide') }
+  }
+  for (const c of multi.cards.values()) c.el.classList.toggle('focus', !multi.asking ? c.side === multi.side : c.el.classList.contains('ask'))
+}
+function endMulti() {
+  if (!multi) return
+  clearInterval(multi.flipTimer); clearTimeout(multi.recheck); clearTimeout(multi.sayTimer); clearTimeout(multi.chatter)
+  for (const c of multi.cards.values()) { c.el.classList.remove('on'); setTimeout(() => c.el.remove(), 400) }
+  $('more').classList.remove('on')
+  multi = null
+  shownAt = 0
+  // 回到只剩的那一个对话的样子（没有就是待机）
+  const left = Object.values(currentSessions()).filter(e => sessionKind(e, Date.now() / 1000) === 'work' || sessionKind(e, Date.now() / 1000) === 'ask')
+  show(left.length ? left[0].pose : 'idle', true)
+  watchStuck()
+}
+
+function applyCharState(id, s) {
+  if (id === 'current') id = charId   // 多模型宿主里没有对应角色的模型（WorkBuddy 的混元、Kimi……）：由当前角色来演
+  const own = id                      // 事件原本属于哪家 AI：先按它记下状态，切回那家的角色时看到的才是最新的
+  charState[own] = s
+  if (standsIn(id)) id = charId       // 代演（reactTo）：别家 AI 的状态当成她自己的（多个会话同时干活时，由 refreshMulti 合并）
+  charState[id] = s
+  if (egg) { if (egg.host === own && s.pose && s.pose !== 'idle') endEgg(); return }
+  if (id !== charId || !s.pose) return
+  lastActive = Date.now()
+  if (multi) return   // 正在演多会话：她的样子由各对话的状态决定（refreshMulti），这里不动
+  if (Date.now() < shakingUntil && s.event !== 'Stop') return   // 正被甩着：先只记下状态，甩停了 resumeWork 回到最新的活上（不然晕和干活来回闪）
+  clearTimeout(thinkTimer)
+  watchStuck()
+  const ev = s.event || ''
+  if (s.pose === 'oops' || (ev === 'Stop' && s.pose === 'surprised')) lastTrouble[id] = Date.now()
+  else if (ev === 'Stop' && (s.pose === 'happy' || s.pose === 'proud')) lastTrouble[id] = 0  // 最后顺利完成了，不算
+  // 工具动作被紧跟着的「思考」盖掉时，状态里会捎带上它（after）：没演过的话先演，停够了再思考
+  if (ev === 'PreToolUse' || ev === 'BeforeTool') seenTool[id] = s.ts
+  if (s.after && s.afterTs !== seenTool[id]) {
+    seenTool[id] = s.afterTs
+    show(s.after, true)
+    show(s.pose)
+    return
+  }
+  if (ev === 'PostToolUse' || ev === 'AfterTool' || ev === 'SubagentStop') {
+    if (s.pose === 'oops') show('oops')
+    else thinkTimer = setTimeout(() => show('thinking'), BACK_TO_THINKING)
+  } else if (ev === 'UserPromptSubmit' || ev === 'BeforeAgent') {
+    // 刚出错 / 被打断后你又发了消息（多半是在纠正她）：有 correctedPose 的角色先认个错
+    // （Claude 的「You're absolutely right!」）
+    const sorry = char()?.correctedPose
+    if (sorry && Date.now() - (lastTrouble[id] || 0) < 3 * 60 * 1000) {
+      lastTrouble[id] = 0
+      show(sorry, true)
+      thinkTimer = setTimeout(() => show('thinking'), DWELL + 500)
+      return
+    }
+    show('listening', true)
+    thinkTimer = setTimeout(() => show('thinking'), LISTEN_TO_THINKING)
+  } else if (ev === 'Stop' && pendingCelebration[id]?.afterWork && !sulking && !angerLevel(angerNow())) {
+    // 干活途中额度刷新了（重置卡 / 换套餐 / 充值）：干完不演普通的开心，演 reset / 吃饭
+    clearTimeout(pending)
+    shownAt = 0
+    celebrate(id, pendingCelebration[id].ev)
+  } else if (ev === 'Stop' && (s.pose === 'happy' || s.pose === 'proud') && !sulking && angerLevel(angerNow())) {
+    // 干活时被甩、憋着的火还没消：干完不庆祝，直接按火气生气，说「干活时被你晃」的那套台词（秋后算账）
+    clearTimeout(shakeEndTimer)
+    react('work')
+  } else {
+    show(s.pose)
+  }
+}
+
+// ---- 额度里的「社区梗」时刻 ----
+// GPT：某个额度窗口在预定重置时间之前突然恢复一大截（官方 reset / 重置卡）→ reset
+// DeepSeek：余额比上次多了（充值）→ feast 大口吃白饭
+// 上次的数值记在本机（localStorage），App 重启后也能比较；没有专属立绘时用 happy / eat 顶上
+const CELEBRATE = { reset: ['reset', 'happy'], feast: ['feast', 'eat'] }
+const pendingCelebration = {}
+function quotaMemory(update) {
+  let m = {}
+  try { m = JSON.parse(localStorage.getItem('crosspet-quota-memory')) || {} } catch {}
+  if (update) { update(m); try { localStorage.setItem('crosspet-quota-memory', JSON.stringify(m)) } catch {} }
+  return m
+}
+// 多少算「充值了」：人民币 0.5，美元按差不多的钱算 0.07
+const FEAST_STEP = { CNY: 0.5, USD: 0.07 }
+function feastByCurrency(prev, now) {
+  if (!prev || typeof prev !== 'object') return false
+  return Object.entries(now).some(([c, v]) => typeof v === 'number' && v - (Number(prev[c]) || 0) >= (FEAST_STEP[c] ?? 0.5))
+}
+function quotaEvent(id, q) {
+  if (!q) return null
+  let ev = null
+  quotaMemory(m => {
+    const prev = m[id] || {}, now = Date.now() / 1000
+    if (Array.isArray(q.windows)) {
+      for (const w of q.windows) {
+        const p = (prev.windows || []).find(x => x.label === w.label)
+        if (p && p.reset && now < p.reset - 600 && p.used - w.used >= 15) ev = 'reset'
+      }
+      m[id] = { ...prev, windows: q.windows }
+    }
+    if (q.balances && typeof q.balances === 'object') {
+      // 按币种分别比（#10）：人民币、美元都可能有，只是顺序变了或币种不同不算充值；某个币种多了才算。
+      // 上次没有按币种的记录（刚从老版本升级）：只记下来，不比，免得拿美元和人民币的数字相减
+      if (feastByCurrency(prev.balances, q.balances)) ev = 'feast'
+      m[id] = { ...(m[id] || prev), balances: q.balances, balance: q.balance }
+      return
+    }
+    const bal = typeof q.balance === 'number' ? q.balance : parseFloat(((q.text || '').match(/[¥$]\s*([\d.]+)/) || [])[1])
+    if (!isNaN(bal)) {
+      if (typeof prev.balance === 'number' && bal - prev.balance >= 0.5) ev = 'feast'
+      m[id] = { ...(m[id] || prev), balance: bal }
+    }
+  })
+  return ev
+}
+function celebrate(id, ev) {
+  if (standsIn(id)) id = charId   // 代演（reactTo）：她响应的 AI 额度刷新了，她来演
+  if (id !== charId || egg) { pendingCelebration[id] = { ev, at: Date.now() }; return }  // 等切到她时再演
+  // 正在干活：额度记录是 AI 回复的半路写下的，这时演会被紧跟着的干活动作盖掉，看不见——留到这一轮干完（Stop）再演
+  if (aiActivity() === 'work') { pendingCelebration[id] = { ev, at: Date.now(), afterWork: true }; return }
+  delete pendingCelebration[id]
+  const [own, fallback] = CELEBRATE[ev]
+  const p = hasPose(own) ? own : fallback
+  show(p, true)
+  say(pick(linesOf(own) || linesOf(p) || ['']))
+  clearTimeout(revertTimer)
+  revertTimer = setTimeout(() => { setPose(restPose()); say('') }, 6500)
+}
+
+// GPT 额度：外壳交来问 Codex 服务得到的原始额度（见 codex-quota.js），排好版再走 setQuota
+function setCodexQuota(p) { setQuota('gpt', p ? CodexQuota.view(p, Date.now() / 1000) : null) }
+function setQuota(id, q) {
+  const wasLow = quota[id]?.low
+  quota[id] = q
+  const ev = quotaEvent(id, q)
+  // 官方宣布之后真的重置了：额度下方那一行收起。开发者控制台演「额度提前 reset」用的是假额度，不算（不然真实的宣布会被当成已经执行了）
+  if (ev === 'reset' && id === 'gpt' && !devActive) codexResetSeenAt = Date.now() / 1000
+  if (ev) celebrate(id, ev)
+  if (egg) return
+  if (id === charId || quotaAggregate || standsIn(id)) renderQuota()   // 聚合 / 代演时别家额度变了也要重画
+  if (id !== charId) return
+  if (q?.low && pose === 'idle') { setPose('tired'); if (!wasLow) say(pick(linesOf('tired') || [''])) }
+  if (!q?.low && pose === 'tired') setPose('idle')
+}
+
+// x、y：外壳交来的点击位置（网页坐标，已经除掉人物大小的缩放）；不带坐标时和以前一样
+function handleClick(kind, x, y) {
+  if (usageFooter && x != null && y != null) {
+    for (const id of ['quota', 'taskTokens']) {
+      const r = $(id).getBoundingClientRect()
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) { toShell({ openTaskUsage: true }); return }
+    }
+  }
+  const card = $('newsCard')
+  if (x != null && y != null && !card.classList.contains('hidden')) {
+    const r = card.getBoundingClientRect()
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {   // 点在卡片上：按钮照按钮办，空白处什么都不做（不摸头）
+      const action = document.elementFromPoint(x, y)?.closest('[data-action]')?.dataset.action
+      if (action === 'news-open') { hideNews(); toShell({ openSettings: 'news' }) }
+      else if (action === 'news-close') hideNews()
+      return
+    }
+  }
+  if (egg) { catchEgg(); return }
+  lastActive = Date.now()
+  if (kind === 'pat' && Math.random() < EGG_CLICK_CHANCE && playEgg(true)) return
+  if (pose === 'sleeping') { show('yawn', true); say('唔…你回来啦'); return }
+  if (kind === 'pat' && (sulking || angerNow() >= 20)) { coaxHer(); return }   // 生着气的时候摸她 = 哄她
+  const pokePose = char()?.pokePose && hasPose(char().pokePose) ? char().pokePose : 'surprised'
+  show(kind === 'poke' ? pokePose : 'pat', true)
+}
+
+// ---- 甩她 / 红温 ----
+// 按住她快速来回甩，红温值往上加（甩 1 秒左右不耐烦，3～4 秒红温）：
+// 20 不耐烦（annoyed）→ 45 鼓脸（puffed）→ 75 红温（redhot，冒蒸汽、发抖），红温后背过身去赌气（sulk）。
+// 生气时摸她就是哄（coaxed）：赌气时摸三下原谅你（forgiven），没到红温时摸一下降一档。红温值不管它会慢慢降
+let anger = 0, angerAt = Date.now(), sulking = false, coax = 0, sulkTimer = null, shakeEndTimer = null
+// 已经是这个动作时 show 不会换台词：哄她时每下都说一句
+const showSay = p => { const was = pose; show(p, true); if (was === p) say(pick(linesOf(p) || [''])) }
+const ANGER_DECAY = 2   // 每秒降多少（赌气时不降，要哄）
+function angerNow() {
+  anger = Math.max(0, anger - (sulking ? 0 : (Date.now() - angerAt) / 1000 * ANGER_DECAY))
+  angerAt = Date.now()
+  return anger
+}
+function angerLevel(a) { return a >= 75 ? 'redhot' : a >= 45 ? 'puffed' : a >= 20 ? 'annoyed' : null }
+function addAnger(n) { angerNow(); anger = Math.min(100, anger + n) }
+const angerBlocked = () => egg || tucked || multi || farewellLine !== null || updatingNow || devHeld()
+// 按现在的红温值做反应
+// afterWork：干活时被甩、干完才发作，换成 work 开头的那套台词（workAnnoyed / workPuffed / workRedhot）
+function react(afterWork) {
+  if (angerBlocked()) return
+  const lv = angerLevel(angerNow())
+  if (!lv) return
+  if (sulking) { show('sulk', true); return }
+  const said = () => { if (afterWork) { const l = linesOf('work' + lv[0].toUpperCase() + lv.slice(1)); if (l) say(pick(l)) } }
+  if (lv !== 'redhot') { show(lv, true); said(); return }
+  sulking = true; coax = 0
+  show('redhot', true)
+  said()
+  clearTimeout(sulkTimer)
+  sulkTimer = setTimeout(() => {
+    if (!sulking) return
+    show('sulk', true)
+    // 赌气太久没人哄：自己慢慢消气（不再说话，回到平常）
+    sulkTimer = setTimeout(() => { if (sulking) { sulking = false; anger = 30; angerAt = Date.now(); show('idle', true) } }, 45000)
+  }, 3500)
+}
+// 外壳检测到正在被甩（按住快速来回拖）时隔一会儿调一次；停下来就按红温值反应。
+// AI 正在干活时被甩：晕着抱怨一句，停手就回去干活；火憋着，干完不庆祝、直接按火气生气（见 applyCharState 的 Stop）。
+// 在等你回答：不切走提问的样子，只催你一句。多会话手忙脚乱：小卡片被甩得东倒西歪
+function shaken() {
+  if (egg || tucked || farewellLine !== null || updatingNow || devHeld()) return
+  lastActive = Date.now()
+  addAnger(7)
+  if (multi) { complain('shakeMulti', ['我已经够乱了！']); wobbleCards(); return }
+  const ai = aiActivity()
+  if (ai === 'asking') { complain('shakeAsk', ['别晃啦，快回答我呀！']); return }
+  show('dizzy', true)   // 已经在晕也再调一次：重新计「晕」的 3 秒，一直甩就一直晕，不会中途闪回待机
+  clearTimeout(shakeEndTimer)
+  if (ai === 'work') {   // 干活时被甩：晕着抱怨一句，停手就回去干活；火憋着，干完再发
+    complain('shakeWork', ['别晃啦，我在干活呢！'])
+    shakingUntil = Date.now() + 1200
+    shakeEndTimer = setTimeout(resumeWork, 1200)
+    return
+  }
+  shakeEndTimer = setTimeout(react, 900)
+}
+// 甩停了：回到手上的活（AI 最新的那个动作；不换台词，抱怨还留在气泡里）
+function resumeWork() {
+  if (aiActivity() !== 'work') return react()
+  const p = charState[charId].pose
+  setPose(p === 'listening' ? 'thinking' : p)
+  shownAt = Date.now()
+}
+// AI 现在在干嘛：'asking'（等你回答）/ 'work'（干活）/ null（闲着）。看 AI 写来的最新状态，太久没动静的不算
+// 插件更新提醒（规则在 plugin-update.js）：外壳启动时把各插件的版本交过来。有要提醒的，等她闲下来说一句，
+// 每次打开桌宠最多说一次（设置页「接入 AI」那一行会一直挂着提醒）。只提醒，不替用户改配置
+let pluginTold = false
+function setPluginUpdates(list) {
+  const tip = (list || []).map(p => window.PluginUpdate && PluginUpdate.advice(p)).find(Boolean)
+  if (!tip || pluginTold) return
+  pluginTold = true
+  let tries = 0
+  const attempt = () => {
+    // 闲着才说：不在干活、没在演彩蛋、没在说别的话；等不到就过一会儿再看，最多等十来分钟
+    if (pose === 'idle' && !egg && aiActivity() !== 'work' && $('bubble').classList.contains('hide')) { say(tip.say); setTimeout(() => { if ($('bubble').textContent === tip.say) say('') }, 9000); return }
+    if (++tries < 30) setTimeout(attempt, 20000)
+  }
+  setTimeout(attempt, 15000)
+}
+function aiActivity() {
+  const s = charState[charId]
+  if (!s?.pose || Date.now() / 1000 - (s.ts || 0) > STUCK_AFTER / 1000) return null
+  if (pose === 'idle' || pose === 'sleeping' || pose === 'tired') return null   // 卡住的状态被兜底送回待机了
+  if (s.pose === 'asking') return 'asking'
+  return NOT_WORKING.has(s.pose) ? null : 'work'
+}
+// 抱怨一句：同一种 4 秒内只说一次，3.5 秒后收起
+const complainedAt = {}
+let complainTimer = null, wobbleTimer = null, shakingUntil = 0
+function complain(key, fallback) {
+  if (Date.now() - (complainedAt[key] || 0) < 4000) return
+  complainedAt[key] = Date.now()
+  const line = pick(linesOf(key) || fallback)
+  say(line)
+  clearTimeout(complainTimer)
+  complainTimer = setTimeout(() => { if ($('bubble').textContent === line) say('') }, 3500)
+}
+function wobbleCards() {
+  const c = $('cards')
+  c.classList.remove('shaken'); void c.offsetWidth; c.classList.add('shaken')   // 重新触发动画
+  clearTimeout(wobbleTimer)
+  wobbleTimer = setTimeout(() => c.classList.remove('shaken'), 1000)
+}
+function coaxHer() {
+  if (sulking) {
+    if (++coax >= 3) return forgive()
+    showSay('coaxed')
+    return
+  }
+  anger = Math.max(0, anger - 25); angerAt = Date.now()
+  showSay(angerLevel(anger) ? 'coaxed' : 'forgiven')
+}
+function forgive() {
+  sulking = false; coax = 0; anger = 0; angerAt = Date.now()
+  clearTimeout(sulkTimer)
+  show('forgiven', true)
+}
+
+// ---- 开发者控制台用（右键「开发者控制台…」）----
+// devShow：演某个角色的某个姿态（可指定某一张图）并保持住，闲置动作、睡觉、自动彩蛋、换图都先停下
+let devHoldUntil = 0, devActive = false
+const devHeld = () => Date.now() < devHoldUntil || updatingNow
+function devShow(id, p, line, frameUrl, holdMs = 10 * 60 * 1000) {
+  devActive = true
+  if (egg) { clearEggTimers(); egg = null; charId = null }
+  if (charId !== id) {
+    const target = manifest.characters[id]
+    if (target?.egg) {  // 彩蛋角色不能直接切换，按彩蛋流程那样换上
+      charId = id; pose = null; currentUrl = ''
+      applyLook(target); $('caption').textContent = target.name
+      document.documentElement.style.setProperty('--aura', target.aura || '#bcd4ff')
+    } else {
+      setCharacter(id, true)
+      setTimeout(() => devShow(id, p, line, frameUrl, holdMs), 450)
+      return
+    }
+  }
+  clearTimeout(pending); clearTimeout(thinkTimer); clearTimeout(revertTimer)
+  devHoldUntil = Date.now() + holdMs
+  pose = null
+  setPose(p, true)
+  if (frameUrl) showImage(frameUrl, true)
+  say(line || '')
+}
+function devRelease() {
+  devHoldUntil = 0; devActive = false
+  if (egg) return
+  const c = manifest?.characters?.[charId]
+  if (c?.egg) { charId = null; setCharacter(c.host || Object.keys(manifest.characters).find(k => !manifest.characters[k].egg), true); return }
+  setPose(restPose()); say('')
+}
+function devStatus() {
+  const frames = framesFor(pose)
+  return { charId, pose, egg: egg ? { host: egg.host, waiting: egg.waiting } : null, held: devHeld(),
+    image: currentUrl.split('/').slice(-2).join('/'), usesFallback: !!(pose && !char()?.poses?.[pose]),
+    fx: (char()?.fx || {})[pose] || null, quota: quota, bubble: $('bubble').classList.contains('hide') ? '' : $('bubble').textContent,
+    frames: frames.length, fallback: POSE_FALLBACK, transient: TRANSIENT }
+}
+
+// ---- 闲着的时候：偶尔哼歌 / 伸懒腰 / 打哈欠，太久没动静就睡 ----
+setInterval(() => {
+  if (devHeld() || egg || (pose !== 'idle' && pose !== 'tired')) return
+  const quiet = Date.now() - lastActive
+  if (quiet > SLEEP_AFTER) { setPose('sleeping'); say(pick(linesOf('sleeping') || [''])); return }
+  if (Math.random() > .42) return
+  const builtin = ['hum', 'stretch', ...(quiet > 3 * 60 * 1000 ? ['yawn'] : [])]
+  const own = (char()?.idleActions || []).filter(hasPose)
+  const pool = own.length ? [...own, ...own, ...builtin] : builtin  // 有专属动作时优先用专属的
+  const a = pick(pool)
+  if (!TRANSIENT[a]) TRANSIENT[a] = 4000
+  show(a, true)
+}, 20000)
+
+// 想得久了换成专属的「深度思考」：character.json 里 longThink: { after: 秒, pose: 姿态 }
+setInterval(() => {
+  const lt = char()?.longThink
+  if (!lt || devHeld() || egg || pose !== 'thinking' || !hasPose(lt.pose)) return
+  if (Date.now() - poseSince > (lt.after || 20) * 1000) show(lt.pose, true)
+}, 1000)
+
+// ---- 彩蛋：角色闲着时，偶尔变成 cos 它的 DeepSeek ----
+// 流程：跳出来 → 装模作样（一直装，等你点她）→ 你点一下 → 被识破 → 溜走 → 变回原角色
+const EGG_POP_MS = 2200, EGG_CAUGHT_MS = 2000, EGG_BYE_MS = 2200
+const EGG_WAIT_MS = 40000           // 一直没人点，她就得意地自己溜走
+const EGG_PRETEND_LINE_MS = 9000    // 装模作样时隔一会儿换句台词
+const EGG_CHANCE_PER_MIN = 1 / 40   // 闲着时每分钟的触发概率，约每小时 1~2 次
+const EGG_CLICK_CHANCE = 0.03       // 点她时也有一点点概率触发
+let egg = null  // 正在演：{ host, timers, waiting }
+
+// 来拜访这个角色的彩蛋，按她现在穿的衣服分开：穿原版只出没写 hostSkin 的，穿皮肤只出 hostSkin 是这件的
+// （皮肤有自己的故事，和原版的彩蛋不混；皮肤没有自己的彩蛋就不出）。有好几个就随机挑一个
+function eggFor(host) {
+  const skin = manifest.characters[host]?.skin || ''
+  const ids = Object.entries(manifest.characters).filter(([, c]) => c.egg && c.host === host && (c.hostSkin || '') === skin).map(([k]) => k)
+  return ids.length ? pick(ids) : undefined
+}
+function clearEggTimers() { egg?.timers.forEach(t => { clearTimeout(t); clearInterval(t) }); if (egg) egg.timers = [] }
+function poof(then) {
+  const p = $('poof'); p.classList.remove('go'); void p.offsetWidth; p.classList.add('go')
+  const stage = $('stage'); stage.classList.add('swap')
+  setTimeout(() => { then(); stage.classList.remove('swap') }, 330)
+}
+function eggLine(step) { return pick((char().lines && char().lines[step]) || ['']) }
+function eggStep(step) {
+  setPose(step)
+  document.documentElement.style.setProperty('--aura', char().aura || '#bcd4ff')
+}
+function playEgg(force) {
+  if (egg || !charId || char()?.egg) return false
+  const eggId = eggFor(charId)
+  if (!eggId) return false
+  if (!force && pose !== 'idle') return false
+  const host = charId
+  egg = { host, timers: [], waiting: false }
+  hideNews()   // 演彩蛋时「新功能」卡片收起
+  clearTimeout(revertTimer); clearTimeout(pending)
+  poof(() => {
+    charId = eggId; pose = null; currentUrl = ''
+    const c = char()
+    document.documentElement.style.setProperty('--accent', c.accent || '#e0b48a')
+    // cos 彩蛋装成别人（「Claude？」）；对手直接上门的彩蛋（DeepSeek × GLM）用自己的名字
+    $('caption').textContent = c.caption || `${manifest.characters[host].name}？`
+    renderQuota()
+    setPose('pop', true); document.documentElement.style.setProperty('--aura', c.aura || '#bcd4ff'); say(eggLine('pop'))
+    egg.timers.push(setTimeout(() => {
+      eggStep('pretend'); say(eggLine('pretend'))
+      egg.waiting = true
+      egg.timers.push(setInterval(() => say(eggLine('pretend')), EGG_PRETEND_LINE_MS))
+      // 没人点：画了 escape（自己走掉）就用它，没画就用 bye。投喂这类彩蛋的 bye 是两人同框，没人点时不能用
+      egg.timers.push(setTimeout(() => leaveEgg(pick((c.lines && c.lines.escape) || ['没人发现～下次见！']), c.poses?.escape ? 'escape' : 'bye'), EGG_WAIT_MS))
+    }, EGG_POP_MS))
+  })
+  return true
+}
+function catchEgg() {
+  if (!egg || !egg.waiting) return
+  egg.waiting = false
+  clearEggTimers()
+  eggStep('caught'); say(eggLine('caught'))
+  egg.timers.push(setTimeout(() => leaveEgg(eggLine('bye')), EGG_CAUGHT_MS))
+}
+function leaveEgg(line, step = 'bye') {
+  if (!egg) return
+  egg.waiting = false
+  clearEggTimers()
+  eggStep(step); say(line)
+  egg.timers.push(setTimeout(() => endEgg(), EGG_BYE_MS))
+}
+function endEgg() {
+  if (!egg) return
+  const host = egg.host
+  clearEggTimers()
+  egg = null
+  poof(() => {
+    charId = host; pose = null; currentUrl = ''
+    const c = char()
+    applyLook(c)
+    $('blink').src = c.blink || ''
+    $('caption').textContent = c.name
+    setPose(restPose(), true); say('')
+    renderQuota()
+  })
+}
+// 设置里可以关掉随机彩蛋；右键「召唤彩蛋」不受影响
+let eggsEnabled = true
+function setEggsEnabled(on) { eggsEnabled = !!on }
+setInterval(() => { if (eggsEnabled && !devHeld() && !devActive && !egg && Math.random() < EGG_CHANCE_PER_MIN) playEgg(false) }, 60000)
+
+// ---- 生动一点：同一状态有多张图时停留久了换一张；有眨眼帧就偶尔眨眼 ----
+setInterval(() => {
+  const frames = framesFor(pose)
+  if (!devHeld() && frames.length > 1 && Date.now() - poseSince > 8000) {
+    poseSince = Date.now()
+    showImage(pick(frames.filter(u => u !== currentUrl)))
+  }
+}, 2000)
+;(function blinkLoop() {
+  setTimeout(() => {
+    const blink = $('blink'), c = char()
+    // 只在显示的正是眨眼帧对应的那张 idle、而且换图淡入已经结束时眨眼，否则会和别的图叠在一起
+    if (c && c.blink && c.blinkBase && (pose === 'idle' || pose === 'listening') && currentUrl === c.blinkBase
+        && active.getAttribute('src') === c.blinkBase && !spare.classList.contains('on') && Date.now() - swappedAt > 600) {
+      blink.classList.add('on')
+      setTimeout(() => blink.classList.remove('on'), 140)
+    }
+    blinkLoop()
+  }, 3000 + Math.random() * 3500)
+})()
+</script>
+</body></html>

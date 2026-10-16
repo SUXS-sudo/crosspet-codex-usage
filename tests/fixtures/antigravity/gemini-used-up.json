@@ -1,0 +1,50 @@
+{
+ "userStatus": {
+  "cascadeModelConfigData": {
+   "clientModelConfigs": [
+    {
+     "label": "Gemini 3.8 Flash (High)",
+     "quotaInfo": {
+      "resetTime": "2026-10-21T09:02:27Z"
+     }
+    },
+    {
+     "label": "Gemini 3.8 Flash (Medium)",
+     "quotaInfo": {
+      "resetTime": "2026-10-21T09:02:27Z"
+     }
+    },
+    {
+     "label": "Gemini 3.8 Flash (Low)",
+     "quotaInfo": {
+      "resetTime": "2026-10-21T09:02:27Z"
+     }
+    },
+    {
+     "label": "Claude Sonnet 4.6 (Thinking)",
+     "quotaInfo": {
+      "remainingFraction": 1,
+      "resetTime": "2026-10-21T09:02:27Z"
+     },
+     "tagTitle": "Notice"
+    },
+    {
+     "label": "Claude Opus 4.6 (Thinking)",
+     "quotaInfo": {
+      "remainingFraction": 1,
+      "resetTime": "2026-10-21T09:02:27Z"
+     },
+     "tagTitle": "Notice"
+    },
+    {
+     "label": "GPT-OSS 120B (Medium)",
+     "quotaInfo": {
+      "remainingFraction": 1,
+      "resetTime": "2026-10-21T09:02:27Z"
+     },
+     "tagTitle": "Notice"
+    }
+   ]
+  }
+ }
+}

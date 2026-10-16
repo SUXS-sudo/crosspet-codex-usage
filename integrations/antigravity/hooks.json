@@ -1,0 +1,30 @@
+{
+  "crosspet": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "python3 \"$HOME/Library/Application Support/CrossPet/crosspet-hook.py\" gemini PreInvocation",
+        "timeout": 5
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/Library/Application Support/CrossPet/crosspet-hook.py\" gemini PostToolUse",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python3 \"$HOME/Library/Application Support/CrossPet/crosspet-hook.py\" gemini Stop",
+        "timeout": 5
+      }
+    ]
+  }
+}

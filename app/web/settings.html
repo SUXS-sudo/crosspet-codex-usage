@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CrossPet 设置</title>
+<style>
+/* 和开发者控制台同一套配色；跟着系统深浅色 */
+:root { --bg: #f6f3ee; --panel: #fff; --ink: #3b2a22; --muted: #8a7a70; --line: #e7dfd5; --accent: #c8792f; --ok: #2f9e5b; --warn: #b07a00; --field: #fffdfa; --hover: #faf5ee; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1f1b18; --panel: #2a2522; --ink: #efe6dd; --muted: #a8998d; --line: #3d3631; --accent: #e09a52; --ok: #5cc184; --warn: #e3b341; --field: #241f1c; --hover: #332c28; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); }
+body { font: 13px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei UI", "Segoe UI", sans-serif; color: var(--ink); padding: 14px 16px 20px; }
+h1 { font-size: 15px; margin: 0 0 2px; }
+.sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
+.card h2 { font-size: 11px; font-weight: 600; color: var(--muted); margin: 0; padding: 8px 14px 4px; letter-spacing: .04em; }
+.item { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-top: 1px solid var(--line); min-height: 42px; }
+.card h2 + .item, .card > .item:first-child { border-top: none; }
+/* 标签页：一次只看一组设置，最上面的「有新版本」不跟着切 */
+.tabs { display: flex; gap: 2px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); padding: 6px 12px 7px; margin-bottom: -1px; }
+.tabs button:hover { color: var(--ink); }
+.tabs button:focus:not(:focus-visible) { outline: none; }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.card[data-tab]:not(.on) { display: none; }
+/* 「新功能」页（文案在 whats-new.js） */
+.tabs button.dot::after { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #d9534f; margin-left: 4px; vertical-align: 2px; }
+.news-ver { display: flex; justify-content: space-between; padding: 8px 14px 4px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.news-ver em { font-style: normal; color: var(--accent); }
+.news-item { display: flex; gap: 10px; align-items: flex-start; padding: 9px 14px; border-top: 1px solid var(--line); }
+.news-icon { width: 26px; height: 26px; border-radius: 7px; background: var(--hover); display: flex; align-items: center; justify-content: center; flex: none; }
+.news-item b { display: block; }
+.news-item small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+.news-go { margin-left: auto; align-self: center; border: none; background: none; color: var(--accent); padding: 2px 0; white-space: nowrap; font-size: 12px; }
+.news-old { display: flex; justify-content: space-between; width: 100%; border: none; border-top: 1px solid var(--line); border-radius: 0; background: none; color: var(--muted); text-align: left; padding: 8px 14px; }
+.news-more { display: block; width: 100%; border: none; border-top: 1px solid var(--line); border-radius: 0; background: none; color: var(--accent); text-align: right; padding: 8px 14px; font-size: 12px; }
+.item.flash { animation: flash 1.5s ease; }
+@keyframes flash { 0%, 40% { background: color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background: transparent; } }
+.item .label { flex: 1; min-width: 0; }
+.item .label small { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+.item .ctl { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+button { font: inherit; border: 1px solid var(--line); background: var(--field); color: var(--ink); border-radius: 7px; padding: 4px 11px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+input[type=text], select { font: inherit; color: var(--ink); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px; }
+input[type=text] { width: 150px; }
+input[type=range] { width: 150px; accent-color: var(--accent); }
+.val { width: 40px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* 文字大小旁边的锁：像 PS 改图像大小的锁链。锁着 = 文字跟着人物 */
+.link { padding: 2px 6px; line-height: 0; color: var(--muted); }
+/* 锁按钮和上一行的「还原」一样宽，两根滑块才对得齐（两个平台字体不同，用最小宽度） */
+[data-reset-size], .link { min-width: 52px; }
+.link svg { width: 16px; height: 16px; }
+.srclink { all: unset; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }   /* 说明文字里的来源链接 */
+.link.on { color: var(--accent); border-color: var(--accent); }
+/* 开关 */
+.switch { position: relative; width: 38px; height: 22px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.switch span { position: absolute; inset: 0; border-radius: 11px; background: var(--line); transition: background .15s; cursor: pointer; }
+.switch span::after { content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::after { transform: translateX(16px); }
+/* 三选一 */
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { border: none; border-radius: 0; padding: 3px 10px; background: var(--field); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--accent); color: #fff; }
+.tag { font-size: 11px; padding: 0 7px; border-radius: 9px; background: var(--hover); color: var(--muted); white-space: nowrap; }
+.tag.ok { color: var(--ok); }
+.item .label small.warn { color: #c0392b; }
+.hidden { display: none !important; }
+#toast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 6px 14px; border-radius: 8px; font-size: 12px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90%; }
+#toast.show { opacity: .92; }
+</style></head>
+<body>
+<h1>CrossPet 设置</h1>
+<div class="sub" id="version"></div>
+
+<div class="card hidden" id="updateCard">
+  <div class="item"><div class="label"><b id="updateText"></b><small>自动下载、安装并重新打开，设置、角色和 AI 接入都保留。</small></div>
+    <div class="ctl"><button class="primary" data-action="update">更新</button></div></div>
+</div>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="look">外观</button><button data-tab="character">角色</button><button data-tab="general">通用</button>
+</nav>
+
+<div class="card" data-tab="look">
+  <div class="item"><div class="label">人物大小</div>
+    <div class="ctl"><input type="range" id="size" min="0.6" max="1.6" step="0.01"><span class="val" id="sizeVal"></span><button data-reset-size>还原</button></div></div>
+  <div class="item"><div class="label">文字大小<small id="textNote">名牌、气泡、额度的字；锁着时跟人物一样大</small></div>
+    <div class="ctl"><input type="range" id="textSize" min="0.6" max="1.6" step="0.01"><span class="val" id="textSizeVal"></span>
+      <button class="link" id="textLink" title="锁着时文字跟着人物大小"></button></div></div>
+  <div class="item"><div class="label">显示名字<small>名牌下面的额度不受影响</small></div>
+    <div class="ctl"><label class="switch"><input type="checkbox" data-key="showName"><span></span></label></div></div>
+  <div class="item"><div class="label">背景光晕<small>深色背景上会变成一圈亮光，「自动」时深色模式下不显示</small></div>
+    <div class="ctl"><div class="seg" id="aura"><button data-v="auto">自动</button><button data-v="on">始终显示</button><button data-v="off">关闭</button></div></div></div>
+</div>
+
+<div class="card" data-tab="character">
+  <div class="item" data-only="freePet"><div class="label">自由选择宠物<small>选谁就用谁，不随 AI 换角色；所选宠物响应所有 AI 的工作动作</small></div>
+    <div class="ctl"><label class="switch"><input type="checkbox" data-key="freePet"><span></span></label></div></div>
+  <div class="item"><div class="label">当前角色</div>
+    <div class="ctl"><select id="character"></select></div></div>
+  <div class="item"><div class="label">名字<small>留空恢复默认</small></div>
+    <div class="ctl"><input type="text" id="name" maxlength="40"><button id="saveName">保存</button></div></div>
+  <div class="item"><div class="label">跟随前台 AI 应用<small>切到哪个 AI 的 App，就换成哪个角色</small></div>
+    <div class="ctl"><label class="switch"><input type="checkbox" data-key="followApps"><span></span></label></div></div>
+  <div class="item" data-only="followEvents"><div class="label">跟随 AI 工作事件<small>在终端里用 AI 时，按最近在干活的 AI 换角色</small></div>
+    <div class="ctl"><label class="switch"><input type="checkbox" data-key="followEvents"><span></span></label></div></div>
+  <div class="item"><div class="label">随机彩蛋<small>偶尔有别的角色冒出来捣乱；关掉后右键「召唤彩蛋」还能手动看</small></div>
+    <div class="ctl"><label class="switch"><input type="checkbox" data-key="eggs"><span></span></label></div></div>
+</div>
+
+<div class="card" data-tab="general">
+  <div class="item"><div class="label" id="loginLabel">登录时自动启动</div>
+    <div class="ctl"><label class="switch"><input type="checkbox" data-key="login"><span></span></label></div></div>
+  <div class="item"><div class="label">全屏时隐藏<small>看视频、演示、玩游戏等全屏时不出现</small></div>
+    <div class="ctl"><label class="switch"><input type="checkbox" data-key="hideFullscreen"><span></span></label></div></div>
+  <div class="item"><div class="label">拖到屏幕边缘时贴边<small>拖到屏幕左右边缘松手，她就缩到边上只露半个身子；AI 干活时自己跑出来，干完缩回去</small></div>
+    <div class="ctl"><label class="switch"><input type="checkbox" data-key="edgeDock"><span></span></label></div></div>
+  <div class="item hidden" data-only="hotkeys"><div class="label">隐藏 / 显示的快捷键<small id="hotkeyNote">按一下藏起来，再按一下出来；也可以点菜单栏的爪印（Windows 双击托盘图标）叫她出来</small></div>
+    <div class="ctl"><select id="hideHotkey" aria-label="隐藏快捷键"></select></div></div>
+  <div class="item"><div class="label">省电模式<small>身边的小特效刷新慢一点、闲着时更快停下；人物动作照旧。笔记本用电池时可以打开</small></div>
+    <div class="ctl"><label class="switch"><input type="checkbox" data-key="powerSave"><span></span></label></div></div>
+  <div class="item"><div class="label">检查更新</div>
+    <div class="ctl"><button data-action="checkUpdate">检查</button></div></div>
+  <div class="item"><div class="label">文件夹<small>换立绘、加角色看「自定义角色」文档</small></div>
+    <div class="ctl"><button data-action="openCharacters">角色</button><button data-action="openData">数据和状态</button></div></div>
+  <div class="item"><div class="label">反馈问题<small>点一下哪里要改就行，不用写长文</small></div>
+    <div class="ctl"><button data-action="feedback">反馈</button></div></div>
+  <div class="item"><div class="label">开发者控制台<small>逐个检查姿态、跑场景演练</small></div>
+    <div class="ctl"><button data-action="devConsole">打开</button></div></div>
+</div>
+
+<div id="toast"></div>
+
+<script src="text-size.js"></script>
+<script>
+// 和宿主（macOS 的 WKWebView / Windows 的 WebView2）通信：页面发 {cmd, ...}，宿主改完设置后调 setState(state) 把最新状态推回来
+const post = msg => window.chrome?.webview ? window.chrome.webview.postMessage(msg) : window.webkit?.messageHandlers?.settings?.postMessage(msg)
+const $ = id => document.getElementById(id)
+let state = null
+
+function toast(text) {
+  const t = $('toast'); t.textContent = text; t.classList.add('show')
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 2200)
+}
+
+function setState(s) {
+  state = s
+  $('version').textContent = `版本 ${s.version}`
+  $('updateCard').classList.toggle('hidden', !s.update)
+  if (s.update) $('updateText').textContent = s.updating ? `正在更新到 ${s.update}…` : `有新版本 ${s.update}`
+  document.querySelector('[data-action=update]').disabled = !!s.updating
+  if (document.activeElement !== $('size')) $('size').value = s.size
+  $('sizeVal').textContent = Math.round(s.size * 100) + '%'
+  // 文字大小：锁着时显示的就是人物大小（规则在 text-size.js）
+  const linked = s.textLinked !== false, text = TextSize.effectiveText(s.size, s.textSize, s.textLinked)
+  if (document.activeElement !== $('textSize')) $('textSize').value = text
+  $('textSizeVal').textContent = Math.round(text * 100) + '%'
+  showLink(linked)
+  for (const el of document.querySelectorAll('[data-key]')) el.checked = !!s[el.dataset.key]
+  for (const el of document.querySelectorAll('[data-only]')) el.classList.toggle('hidden', s[el.dataset.only] === undefined || s[el.dataset.only] === null)
+  for (const b of $('aura').children) b.classList.toggle('on', b.dataset.v === s.aura)
+  for (const key of ['followApps', 'followEvents']) {
+    const el = document.querySelector(`[data-key="${key}"]`)
+    el.disabled = !!s.freePet
+    el.closest('.item').style.opacity = s.freePet ? '0.45' : ''
+  }
+  const sel = $('character')
+  // 有别的衣服（皮肤）的角色展开成几项：「DeepSeek · 女仆装」「DeepSeek · Claude 卫衣」（值写成 角色|皮肤）
+  sel.replaceChildren(...s.characters.flatMap(c => c.skins
+    ? c.skins.map(k => new Option(`${c.name} · ${k.name}`, `${c.id}|${k.id}`, false, c.id === s.character && k.id === (c.skin || '')))
+    : [new Option(c.name, c.id, false, c.id === s.character)]))
+  const cur = s.characters.find(c => c.id === s.character)
+  if (document.activeElement !== $('name')) { $('name').value = cur?.custom || ''; $('name').placeholder = cur?.defaultName || '' }
+  if (s.loginNote) $('loginLabel').innerHTML = `登录时自动启动<small>${s.loginNote}</small>`
+  if (s.hotkeys) {
+    $('hideHotkey').replaceChildren(...s.hotkeys.map(h => new Option(h.label, h.id, false, h.id === s.hideHotkey)))
+    const n = $('hotkeyNote')
+    n.textContent = s.hotkeyFailed ? '这个快捷键被别的程序占用了，换一个试试' : '按一下藏起来，再按一下出来；也可以点菜单栏的爪印（Windows 双击托盘图标）叫她出来'
+    n.classList.toggle('warn', !!s.hotkeyFailed)
+  }
+}
+
+// 宿主做完一件事后的提示（接入结果、检查更新结果等）
+function notice(text) { toast(text) }
+
+for (const el of document.querySelectorAll('[data-key]')) el.onchange = () => post({ cmd: 'set', key: el.dataset.key, value: el.checked })
+for (const b of $('aura').children) b.onclick = () => post({ cmd: 'set', key: 'aura', value: b.dataset.v })
+for (const b of document.querySelectorAll('[data-action]')) b.onclick = () => post({ cmd: 'action', name: b.dataset.action })
+// 锁链图标：锁着 = 两节扣在一起；解开 = 断开
+const LINK_ON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6.5 9.5l3-3M7 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1M9 11.5l-1 1a2.5 2.5 0 01-3.5-3.5l1-1"/></svg>'
+const LINK_OFF = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1M9 11.5l-1 1a2.5 2.5 0 01-3.5-3.5l1-1M3 3l1.5 1.5M13 13l-1.5-1.5"/></svg>'
+function showLink(linked) {
+  const b = $('textLink'); b.innerHTML = linked ? LINK_ON : LINK_OFF; b.classList.toggle('on', linked)
+  b.title = linked ? '锁着：文字跟着人物大小。点一下解开，单独调文字' : '已解开：文字单独调。点一下锁上，文字回到和人物一样大'
+}
+const pct = v => Math.round(v * 100) + '%'
+$('size').oninput = () => {
+  const v = +$('size').value
+  $('sizeVal').textContent = pct(v)
+  if (state?.textLinked !== false) { $('textSize').value = v; $('textSizeVal').textContent = pct(v) }   // 锁着：文字滑块跟着动
+  post({ cmd: 'set', key: 'size', value: v })
+}
+// 单独拖文字：外壳收到 textSize 就记为解锁
+$('textSize').oninput = () => {
+  const v = +$('textSize').value
+  $('textSizeVal').textContent = pct(v); showLink(false)
+  if (state) state.textLinked = false
+  post({ cmd: 'set', key: 'textSize', value: v })
+}
+// 点锁：锁着时解开（文字先等于当前人物大小，看着不变）；解开时锁上（文字回到和人物一样）
+$('textLink').onclick = () => state?.textLinked === false
+  ? post({ cmd: 'set', key: 'textLinked', value: true })
+  : post({ cmd: 'set', key: 'textSize', value: +$('size').value })
+// 还原：人物、文字都回 100%，并锁上
+document.querySelector('[data-reset-size]').onclick = () => { post({ cmd: 'set', key: 'size', value: 1 }); post({ cmd: 'set', key: 'textLinked', value: true }) }
+$('hideHotkey').onchange = () => post({ cmd: 'set', key: 'hideHotkey', value: $('hideHotkey').value })
+$('character').onchange = () => {
+  const [id, skin] = $('character').value.split('|')
+  post(skin === undefined ? { cmd: 'set', key: 'character', value: id } : { cmd: 'skin', id, skin })
+}
+const saveName = () => { post({ cmd: 'rename', id: state.character, name: $('name').value.trim() }); $('name').blur(); toast('名字已保存') }
+$('saveName').onclick = saveName
+$('name').onkeydown = e => { if (e.key === 'Enter') saveName() }
+
+// 标签页：记住上次看的是哪一页（每个人自己的小习惯，存不下也没关系）
+function showTab(tab) {
+  if (!document.querySelector(`.card[data-tab="${tab}"]`)) tab = 'look'
+  for (const el of document.querySelectorAll('[data-tab]')) el.classList.toggle('on', el.dataset.tab === tab)
+  try { localStorage.setItem('crosspet-settings-tab', tab) } catch {}
+}
+
+for (const b of $('tabs').children) b.onclick = () => showTab(b.dataset.tab)
+let lastTab = null
+try { lastTab = localStorage.getItem('crosspet-settings-tab') } catch {}
+showTab(lastTab || 'look')
+
+post({ cmd: 'get' })
+</script>
+</body></html>

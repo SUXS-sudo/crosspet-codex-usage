@@ -1,0 +1,56 @@
+import Carbon
+import Cocoa
+import ServiceManagement
+import WebKit
+
+extension App {
+    // MARK: 状态与额度
+
+    /// 读 /tmp/crosspet/<id>-state.json 和 <id>-quota.json，有变化就交给画面。
+    func pollStates() {
+        guard ready else { return }
+        // current：多模型宿主（WorkBuddy）里没有对应角色的模型，由当前角色来演；它只有状态，没有额度
+        for id in characterIds + ["current"] {
+            // sessions：同一个 AI 好几个对话同时干活时，每个对话各自的状态（演「手忙脚乱」用）
+            for kind in ["state", "quota", "sessions"] where !(id == "current" && kind == "quota") && !(id == "deepseek" && kind == "quota" && !dsQuotaEnabled) {
+                let url = stateDir.appendingPathComponent("\(id)-\(kind).json")
+                let key = "\(id)-\(kind)"
+                guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+                      let stamp = attrs[.modificationDate] as? Date, stamp != stamps[key] else { continue }
+                stamps[key] = stamp
+                // 状态只认 10 分钟内的，免得开机读到旧状态
+                if kind == "state", Date().timeIntervalSince(stamp) > 600 { continue }
+                guard let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8) else { continue }
+                if kind == "state", let pose = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["pose"] as? String {
+                    lastPose[id] = (pose, stamp)
+                }
+                if kind == "sessions" { if !pauseRealEvents { js("setSessions(\(quote(id)), \(text))") }; continue }
+                devJS("logEvent(\(quote(id)), \(quote(kind)), \(text), \(pauseRealEvents))")
+                if pauseRealEvents { continue }
+                js(kind == "state" ? "applyCharState(\(quote(id)), \(text))" : "setQuota(\(quote(id)), \(text))")
+                // Codex 回完一轮：额度记录刚写进会话，马上读一次（不然要等每分钟一次的定时刷新）
+                if kind == "state", id == "gpt" {
+                    if text.contains("\"event\": \"Stop\"") || text.contains("\"event\":\"Stop\"") {
+                        codexBusyAt = nil
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.refreshCodexQuota(.turnEnd) }
+                    } else { codexBusyAt = stamp }   // 在干活：定时查额度改成 1 分钟一次（codexTickDue）
+                }
+            }
+        }
+        applyLayer()
+        updateDock()
+        // 多模型宿主（DeepSeek Harness、WorkBuddy、ZCode，以及接了别家接口的 Claude Code、Codex）正在前台、
+        // 里面换了模型：马上换成那个模型的角色
+        for host in ["deepseek", "workbuddy", "zcode", "claude", "gpt"] {
+            let url = stateDir.appendingPathComponent("\(host)-host.json")
+            guard let stamp = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date,
+                  stamp != stamps["\(host)-host"] else { continue }
+            stamps["\(host)-host"] = stamp
+            guard followApps, !pauseRealEvents, let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+                  (appToCharacter[front] ?? hostApp(front)) == host else { continue }
+            let id = hostCharacter(host)
+            if id != currentId, characterIds.contains(id) { switchTo(id) }
+        }
+    }
+
+}

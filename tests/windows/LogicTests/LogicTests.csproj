@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Windows 外壳里不依赖界面 / WebView2 的判断，在 macOS 上也能跑：
+       运行：~/.dotnet/dotnet run （在 tests/windows/LogicTests 里） -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../../app/windows/src/SpritePath.cs" />
+    <Compile Include="../../../app/windows/src/ConcealStyle.cs" />
+    <Compile Include="../../../app/windows/src/AntigravityQuota.Parse.cs" />
+    <Compile Include="../../../app/windows/src/ZoomCheck.cs" />
+  </ItemGroup>
+</Project>
