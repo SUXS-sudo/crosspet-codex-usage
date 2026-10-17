@@ -27,11 +27,11 @@
     // 过了重置时间、又没有新数据的窗口现在是满的，不算「快用完」
     const live = windows.filter(w => !w.reset || w.reset > nowSec)
     const maxUsed = live.length ? Math.max(...live.map(w => w.used)) : 0
-    let marked = false
     const parts = windows.map(w => {
       if (w.reset > 0 && w.reset <= nowSec) return `${w.label} 剩余 100%`
       let s = `${w.label} 剩余 ${Math.max(0, 100 - Math.round(w.used))}%`
-      if (!marked && w.used === maxUsed && w.reset > 0) { marked = true; s += ` · ${when(w.reset, nowSec)} 重置` }
+      // 两个额度窗口分别显示重置时间，避免每周用量较高时隐藏 5 小时的时间。
+      if (w.reset > nowSec) s += ` · ${when(w.reset, nowSec)} 重置`
       return s
     })
     let text = parts.join(' ｜ ')

@@ -6,9 +6,9 @@ const { view } = require('../app/web/codex-quota.js')
 const NOW = Date.UTC(2026, 9, 12, 4, 0, 0) / 1000   // 2026-10-12 12:00 北京时间
 const win = (used, mins, reset) => ({ usedPercent: used, windowDurationMins: mins, resetsAt: reset })
 
-test('实时：两个窗口，重置时间标在用得最多的那个上', () => {
+test('实时：两个窗口分别显示重置时间，即使每周用量更高', () => {
   const v = view({ source: 'live', at: NOW, rateLimits: { primary: win(3, 300, NOW + 3600), secondary: win(40, 10080, NOW + 3 * 86400) } }, NOW)
-  assert.strictEqual(v.text, '5小时 剩余 97% ｜ 本周 剩余 60% · 10/15 重置')
+  assert.strictEqual(v.text, '5小时 剩余 97% · 13:00 重置 ｜ 本周 剩余 60% · 10/15 重置')
   assert.strictEqual(v.low, false)
   assert.deepStrictEqual(v.windows, [{ label: '5小时', used: 3, reset: NOW + 3600 }, { label: '本周', used: 40, reset: NOW + 3 * 86400 }])
   assert.strictEqual(v.source, 'live')
@@ -41,4 +41,14 @@ test('没有可用窗口 / 空 payload 返回 null', () => {
 test('「今日」窗口标签', () => {
   const v = view({ source: 'live', at: NOW, rateLimits: { primary: win(0, 1440, 0) } }, NOW)
   assert.strictEqual(v.text, '今日 剩余 100%')
+})
+
+test('5 小时用量更高时，仍保留每周的重置日期', () => {
+  const v = view({ source: 'live', rateLimits: { primary: win(80, 300, NOW + 7200), secondary: win(10, 10080, NOW + 2 * 86400) } }, NOW)
+  assert.strictEqual(v.text, '5小时 剩余 20% · 14:00 重置 ｜ 本周 剩余 90% · 10/14 重置')
+})
+
+test('没有提供重置时间时不编造时间，另一项仍正常显示', () => {
+  const v = view({ source: 'live', rateLimits: { primary: win(0, 300, 0), secondary: win(20, 10080, NOW + 2 * 86400) } }, NOW)
+  assert.strictEqual(v.text, '5小时 剩余 100% ｜ 本周 剩余 80% · 10/14 重置')
 })
