@@ -1,1 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net48</TargetFramework><LangVersion>latest</LangVersion></PropertyGroup><ItemGroup><Reference Include="System.Web.Extensions"/><Compile Include="../../../app/windows/src/UsageSummary.cs"/><Compile Include="../../../app/windows/src/UsageViewer/TaskUsageStore.cs"/><PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all"/></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Web.Extensions" />
+    <Compile Include="../../../app/windows/src/UsageViewer/UsageSummary.cs" />
+    <Compile Include="../../../app/windows/src/UsageViewer/TaskUsageModels.cs" />
+    <Compile Include="../../../app/windows/src/UsageViewer/TaskUsageStore.cs" />
+    <Compile Include="../../../app/windows/src/UsageViewer/UsageMetrics.cs" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

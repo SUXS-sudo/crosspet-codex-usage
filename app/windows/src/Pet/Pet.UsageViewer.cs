@@ -46,12 +46,10 @@ namespace CrossPet
             try
             {
                 var result = await ReadUsage();
-                var today = new TokenCounts();
-                foreach (var t in result.Tasks)
-                    if (t.Days.TryGetValue(TaskUsageStore.Now.Date, out var day)) today.Add(day);
+                var date = TaskUsageStore.Now.Date;
+                var today = UsageMetrics.Sum(result.Tasks.Select(t => UsageMetrics.SelectCounts(t, date, date)));
                 bool any = result.Tasks.Any(t => t.HasUsage);
-                usageTokenText = result.MissingSessions && !any ? "今日 Token  —" :
-                    "今日 Token  " + (any ? TaskUsageWindow.Compact(today.Total) : "—");
+                usageTokenText = "今日 Token  " + (any ? UsageMetrics.Compact(today.Total) : "—");
                 usageTokenDetail = "北京时间今日累计增量，包含子代理\n" + today.Total.ToString("N0") +
                     " Token\n输入 " + today.Input.ToString("N0") + " · 输出 " + today.Output.ToString("N0") +
                     "\n缺失记录的任务不视为零消耗";
@@ -100,7 +98,8 @@ namespace CrossPet
         {
             if (taskUsageWindow == null) return;
             var m = Store.Json.DeserializeObject(ManifestJson) as System.Collections.Generic.Dictionary<string, object>;
-            var chars = m?["characters"] as System.Collections.Generic.Dictionary<string, object>;
+            var chars = m != null && m.TryGetValue("characters", out var characters)
+                ? characters as System.Collections.Generic.Dictionary<string, object> : null;
             var c = chars != null && chars.TryGetValue(current, out var v) ? v as System.Collections.Generic.Dictionary<string, object> : null;
             var accent = c != null && c.TryGetValue("accent", out var a) ? a as string : null;
             var name = c != null && c.TryGetValue("name", out var n) ? n as string : current;

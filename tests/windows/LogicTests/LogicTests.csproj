@@ -8,9 +8,9 @@
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../../app/windows/src/SpritePath.cs" />
-    <Compile Include="../../../app/windows/src/ConcealStyle.cs" />
-    <Compile Include="../../../app/windows/src/AntigravityQuota.Parse.cs" />
-    <Compile Include="../../../app/windows/src/ZoomCheck.cs" />
+    <Compile Include="../../../app/windows/src/Sprites/SpritePath.cs" />
+    <Compile Include="../../../app/windows/src/Platform/ConcealStyle.cs" />
+    <Compile Include="../../../app/windows/src/Quota/AntigravityQuota.Parse.cs" />
+    <Compile Include="../../../app/windows/src/Platform/ZoomCheck.cs" />
   </ItemGroup>
 </Project>

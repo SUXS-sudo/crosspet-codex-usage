@@ -20,6 +20,12 @@ Check(r.Tasks.SelectMany(t=>t.Days).Where(d=>d.Key==new DateTime(2026,10,16)).Su
 Check(!r.Tasks.Single(t=>t.Id=="missing").HasUsage,"missing usage stays unknown");
 File.AppendAllLines(root+"/sessions/child.jsonl",new[]{Snapshot("2026-10-16T02:00:00Z",60)});
 Check(store.Load(root).Tasks.Single(t=>t.Id=="child").Counts.Total==60,"incremental cache sees file changes");
+var day = new DateTime(2026,10,16);
+var today = UsageMetrics.Sum(r.Tasks.Select(t => UsageMetrics.SelectCounts(t, day, day)));
+Check(today.Total==90 && today.Input==80 && today.Output==10,"footer and list share Beijing daily increments");
+Check(UsageMetrics.SelectCounts(r.Tasks.Single(t=>t.Id=="parent"),null,day).Total==150,"all-time selection preserves cumulative totals");
+Check(UsageMetrics.SelectCounts(r.Tasks.Single(t=>t.Id=="parent"),day.AddDays(1),day.AddDays(1)).Total==0,"empty date range has zero usage");
+Check(UsageMetrics.Sum(new TokenCounts[0]).Total==0 && UsageMetrics.Compact(1500)==(1.5).ToString("0.##")+"K","empty aggregation and compact token display");
 var limits=new Dictionary<string,object>{{"primary",new Dictionary<string,object>{{"usedPercent",23},{"windowDurationMins",300}}},{"secondary",new Dictionary<string,object>{{"usedPercent",105},{"windowDurationMins",10080}}}};
 Check(UsageSummary.Quota(limits)=="5小时剩余 77% · 本周剩余 0%","remaining quota labels and bounds");
 Check(UsageSummary.Quota(new Dictionary<string,object>())=="暂无可用额度数据","unavailable quota does not become 100 percent");
@@ -27,6 +33,6 @@ var left=UsageSummary.Place(1000,300,1260,662,0,0,1920,1080,232,144,8);
 var right=UsageSummary.Place(0,300,260,662,0,0,1920,1080,232,144,8);
 var edge=UsageSummary.Place(-200,300,60,662,-1920,0,0,1080,232,144,8);
 Check(left.x==760 && right.x==268 && edge.x>=-1920 && edge.x+232<=0,"card placement switches side and handles negative monitor coordinates");
-Console.WriteLine("All 7 merge checks passed.");
+Console.WriteLine("All merge checks passed.");
 }
 }

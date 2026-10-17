@@ -61,6 +61,16 @@ dotnet run --project tests/windows/UsageMergeTests -- '<工作空间内的测试
 
 JavaScript 测试覆盖文字缩放、额度排版等；Windows 检查覆盖会话去重、累计统计、北京时间日期和子代理。
 
+## 代码结构
+
+- `app/web`：桌宠画面、互动效果与设置页面，Windows 和 macOS 共用。
+- `app/windows/src`：入口 `Program.cs`、配置与资源管理 `Store.cs`；其余源码按职责分组：`Pet`（桌宠与交互）、`Quota`（额度来源）、`Platform`（Windows 系统接口）、`Sprites`（立绘资源）、`Dialogs`（设置及辅助窗口）、`UsageViewer`（任务统计）。
+- `app/windows/src/UsageViewer`：任务用量模块。`TaskUsageModels.cs` 定义数据，`TaskUsageStore.cs` 读取和缓存会话，`UsageMetrics.cs` 统一日期筛选、汇总与数字格式，`TaskUsageWindow.cs` 负责界面。
+- `app/mac`：macOS 外壳；`integrations`：各 AI 的事件钩子；`characters`：角色及素材。
+- `tools`：构建与素材工具，见[工具导航](tools/README.md)；`tests`：回归检查；`docs`：设计、来源及使用说明，见[文档导航](docs/README.md)。
+
+底栏、任务列表和趋势图共用用量计算逻辑。构建入口仍为 `tools/build-merged-windows.ps1`；临时验证文件放在忽略提交的 `.task-*` 专用目录。
+
 ## 来源与许可
 
 - 原项目：[CrossPet](https://github.com/lokicorvus/crosspet)，保留原作者署名、版权和角色素材许可。[原版说明](docs/UPSTREAM_README.md)。

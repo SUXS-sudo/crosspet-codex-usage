@@ -148,14 +148,14 @@ internal sealed class TaskUsageWindow : Window
         if (start.HasValue && start.Value > end) { status.Text = "开始日期不能晚于结束日期。"; return; }
         string query = search.Text.Trim();
         var eligible = data.Tasks.Where(t => (children.IsChecked == true || !t.Subagent) && (query.Length == 0 || (t.Title + " " + t.Directory + " " + t.Id).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)).ToList();
-        rows = eligible.Select(t => new TaskUsageRow { Task = t, Counts = SelectCounts(t, start, end) }).Where(r => !start.HasValue || r.Total > 0).ToList();
+        rows = eligible.Select(t => new TaskUsageRow { Task = t, Counts = UsageMetrics.SelectCounts(t, start, end) }).Where(r => !start.HasValue || r.Total > 0).ToList();
         rows = sort.SelectedIndex == 1 ? rows.OrderByDescending(r => r.Task.LastActivity).ToList() : rows.OrderByDescending(r => r.Total).ToList();
         long max = Math.Max(1, rows.Select(r => r.Total).DefaultIfEmpty(0).Max());
         foreach (var r in rows) r.Weight = 100.0 * r.Total / max;
         string selected = (table.SelectedItem as TaskUsageRow)?.Task.Id;
         table.ItemsSource = rows; if (selected != null) table.SelectedItem = rows.FirstOrDefault(r => r.Task.Id == selected);
-        var counts = new TokenCounts(); foreach (var r in rows) counts.Add(r.Counts);
-        totalValue.Text = Compact(counts.Total); inputValue.Text = Compact(counts.Input); outputValue.Text = Compact(counts.Output); cacheValue.Text = counts.Input == 0 ? "—" : (100.0 * counts.Cached / counts.Input).ToString("F1") + "%";
+        var counts = UsageMetrics.Sum(rows.Select(r => r.Counts));
+        totalValue.Text = UsageMetrics.Compact(counts.Total); inputValue.Text = UsageMetrics.Compact(counts.Input); outputValue.Text = UsageMetrics.Compact(counts.Output); cacheValue.Text = counts.Input == 0 ? "—" : (100.0 * counts.Cached / counts.Input).ToString("F1") + "%";
         totalValue.ToolTip = counts.Total.ToString("N0"); inputValue.ToolTip = counts.Input.ToString("N0"); outputValue.ToolTip = counts.Output.ToString("N0");
         taskCount.Text = rows.Count + " 个任务 · " + (start.HasValue ? start.Value.ToString("yyyy-MM-dd") + " 至 " + end.ToString("yyyy-MM-dd") : "累计用量") + " · 点击列标题可排序";
         quota.Text = quotaText();
@@ -170,8 +170,6 @@ internal sealed class TaskUsageWindow : Window
         ApplyPetTheme();
     }
 
-    internal static TokenCounts SelectCounts(TaskUsage t, DateTime? start, DateTime end) { if (!start.HasValue) return t.Counts; var c = new TokenCounts(); foreach (var d in t.Days) if (d.Key >= start.Value.Date && d.Key <= end) c.Add(d.Value); return c; }
-    internal static string Compact(long n) { return n >= 1000000000 ? (n / 1000000000.0).ToString("0.##") + "B" : n >= 1000000 ? (n / 1000000.0).ToString("0.##") + "M" : n >= 1000 ? (n / 1000.0).ToString("0.##") + "K" : n.ToString("N0"); }
     private void DrawChart(List<TaskUsage> tasks, DateTime? start, DateTime end)
     {
         chart.Children.Clear(); chart.ColumnDefinitions.Clear();
@@ -180,14 +178,14 @@ internal sealed class TaskUsageWindow : Window
         int bucket = Math.Max(1, (int)Math.Ceiling(count / 14.0));
         var bars = new List<Tuple<DateTime, DateTime, long>>();
         for (DateTime d = first; d <= end; d = d.AddDays(bucket))
-        { DateTime stop = d.AddDays(bucket - 1); if (stop > end) stop = end; long n = tasks.Sum(t => t.Days.Where(p => p.Key >= d && p.Key <= stop).Sum(p => p.Value.Total)); bars.Add(Tuple.Create(d, stop, n)); }
+        { DateTime stop = d.AddDays(bucket - 1); if (stop > end) stop = end; long n = tasks.Sum(t => UsageMetrics.SelectCounts(t, d, stop).Total); bars.Add(Tuple.Create(d, stop, n)); }
         long max = Math.Max(1, bars.Select(b => b.Item3).DefaultIfEmpty(0).Max());
         for (int i = 0; i < bars.Count; i++)
         {
             chart.ColumnDefinitions.Add(new ColumnDefinition()); var value = bars[i];
             var stack = new Grid { Margin = new Thickness(4, 0, 4, 0), ToolTip = value.Item1.ToString("yyyy-MM-dd") + (bucket > 1 ? " ~ " + value.Item2.ToString("MM-dd") : "") + "\n" + value.Item3.ToString("N0") + " token" };
             stack.RowDefinitions.Add(new RowDefinition { Height = new GridLength(21) }); stack.RowDefinitions.Add(new RowDefinition()); stack.RowDefinitions.Add(new RowDefinition { Height = new GridLength(22) });
-            var label = Text(Compact(value.Item3), 10, "#5C635C"); label.HorizontalAlignment = HorizontalAlignment.Center; stack.Children.Add(label);
+            var label = Text(UsageMetrics.Compact(value.Item3), 10, "#5C635C"); label.HorizontalAlignment = HorizontalAlignment.Center; stack.Children.Add(label);
             var bar = new Border { Background = Brush("#539169"), CornerRadius = new CornerRadius(3, 3, 0, 0), Height = Math.Max(2, 36.0 * value.Item3 / max), VerticalAlignment = VerticalAlignment.Bottom, MaxWidth = 54 }; Grid.SetRow(bar, 1); stack.Children.Add(bar);
             var date = Text(value.Item1.ToString("MM/dd"), 10, "#828A7C"); date.HorizontalAlignment = HorizontalAlignment.Center; Grid.SetRow(date, 2); stack.Children.Add(date); Grid.SetColumn(stack, i); chart.Children.Add(stack);
         }
